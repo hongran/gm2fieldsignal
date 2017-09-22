@@ -1,0 +1,39 @@
+# This @product_deps@ file defines dependencies for this package. 
+
+# The *parent* line must the first non-commented line and defines this product and version
+# The version must be of the form vxx_yy_zz (e.g. v01_02_03)
+parent gm2fieldsignal v0_00_00
+defaultqual e10
+
+# These optional lines define where headers, libraries, and executables go and should
+# be used only if your product does not conform to the defaults.
+# Format: directory_type directory_path directory_name
+#   where directory_type is one of incdir, libdir, or bindir
+#   where directory_path is one of product_dir, fq_dir and - 
+
+incdir  product_dir     include
+libdir  fq_dir          lib
+bindir  fq_dir          bin
+#flcdir  product_dir     fcl
+
+# With "product  version" table below, we now define depdendencies
+# Add the dependent product and version
+
+product          version
+gm2dataproducts	 v7_05_00
+cetbuildtools    v5_04_03	-	only_for_build
+end_product_list
+
+# We now define allowed qualifiers and the corresponding qualifiers for the depdencies.
+# Make a table by adding columns before "notes". 
+qualifier        gm2dataproducts   notes
+e10:debug        e10:debug         
+e10:opt          e10:opt           
+e10:prof         e10:prof          
+end_qualifier_list
+
+# Preserve tabs and formatting in emacs and vi / vim:
+
+### Local Variables:
+### tab-width: 8
+### End:
