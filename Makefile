@@ -10,4 +10,3 @@ all:
 	make $@ -C Dsp
 	make $@ -C Fid
 	make $@ -C Barcode
-
