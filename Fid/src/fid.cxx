@@ -98,22 +98,25 @@ void Fid::Init(std::string Option)
   auto t1 = std::chrono::high_resolution_clock::now();
   auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
   double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
-  std::cout << "Time = "<<t<<std::endl;
+  //std::cout << "Time = "<<t<<std::endl;
+//  std::cout << "Freq = "<<freq_array_[ZC]<<std::endl;
+//  std::cout << "EdgeWidth = "<<edge_width_<<std::endl;
+  //std::cout << "Range = "<<tm_[i_wf_] <<" "<<tm_[f_wf_]<<std::endl;
   }else if (Option.compare("Standard")==0){
     CallFFT();
     CalcPowerEnvAndPhase();
     BaselineCorrection();
+    CalcMaxAmp();
     FindFidRange();
     GuessFitParams();
     CalcNoise();
-    CalcMaxAmp();
     if (noise_>0.0){
       snr_ = max_amp_ / noise_;
     }else{
       snr_ = 1e7;// If noise is not set, snr is set to very high
     }
 
-    freq_method_ = PD;
+    freq_method_ = PH;
     CalcFreq();
   }else if (Option.compare("FFTOnly")==0){
     CallFFT();
@@ -198,6 +201,7 @@ void Fid::CenterFid()
   double sum  = std::accumulate(wf_.begin(), wf_.begin() + w, 0.0);
   double avg = sum / w; // to pass into lambda
   mean_ = avg; // save to class
+  //std::cout <<"Baseline " << avg <<std::endl;
 
   std::for_each(wf_.begin(), wf_.end(), [avg](double& x){ x -= avg; });
 }
@@ -237,7 +241,14 @@ double Fid::CalcRms()
 
 void Fid::CalcMaxAmp()
 {
-  auto mm = std::minmax_element(wf_.begin(), wf_.end());
+  //Waveform select
+  std::vector<double>* wfptr;
+  if (FFTDone){
+    wfptr = &filtered_wf_;
+  }else{
+    wfptr = &wf_;
+  }
+  auto mm = std::minmax_element(wfptr->begin(), wfptr->end());
 
   if (std::abs(*mm.first) > std::abs(*mm.second)) {
 
@@ -256,20 +267,28 @@ void Fid::FindFidRange()
   double thresh = start_amplitude_ * max_amp_;
   bool checks_out = false;
 
+  //Waveform select
+  std::vector<double>* wfptr;
+  if (FFTDone){
+    wfptr = &filtered_wf_;
+  }else{
+    wfptr = &wf_;
+  }
+
   // Find the first element with magnitude larger than thresh
   int IgnoreRange = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
-  auto it_1 = wf_.begin() + IgnoreRange;
+  auto it_1 = wfptr->begin() + IgnoreRange;
 
   while (!checks_out) {
 
     // Check if the point is above threshold.
-    auto it_i = std::find_if(it_1, wf_.end(),
+    auto it_i = std::find_if(it_1, wfptr->end(),
       [thresh](double x) {
         return std::abs(x) > thresh;
     });
 
     // Make sure the point is not with one of the vector's end.
-    if ((it_i != wf_.end()) && (it_i + 1 != wf_.end())) {
+    if ((it_i != wfptr->end()) && (it_i + 1 != wfptr->end())) {
 
       // Check if the next point is also over threshold.
       checks_out = std::abs(*(it_i + 1)) > thresh;
@@ -279,48 +298,48 @@ void Fid::FindFidRange()
 
       // Turn the iterator into an index
       if (checks_out) {
-        i_wf_ = std::distance(wf_.begin(), it_i);
+        i_wf_ = std::distance(wfptr->begin(), it_i);
       }
 
     } else {
 
       // If we have reached the end, mark it as the last.
-      i_wf_ = std::distance(wf_.begin(), wf_.end());
+      i_wf_ = std::distance(wfptr->begin(), wfptr->end());
       break;
     }
   }
 
   // Find the next element with magnitude lower than thresh
-  auto it_2 = std::find_if(wf_.begin() + i_wf_, wf_.end(),
+  auto it_2 = std::find_if(wfptr->begin() + i_wf_, wfptr->end(),
       [thresh](double x) {
         return std::abs(x) < 0.8 * thresh;
   });
 
-  if ((it_2 != wf_.end()) && (it_2 + 1 != wf_.end())) {
+  if ((it_2 != wfptr->end()) && (it_2 + 1 != wfptr->end())) {
 
     checks_out = false;
 
   } else {
 
-    f_wf_ = std::distance(wf_.begin(), wf_.end());
+    f_wf_ = std::distance(wfptr->begin(), wfptr->end());
     checks_out = true;
   }
 
   while (!checks_out) {
 
     // Find the range around a peak.
-    auto it_i = std::find_if(it_2, wf_.end(),
+    auto it_i = std::find_if(it_2, wfptr->end(),
       [thresh](double x) {
         return std::abs(x) > 0.8 * thresh;
     });
 
-    auto it_f = std::find_if(it_i + 1, wf_.end(),
+    auto it_f = std::find_if(it_i + 1, wfptr->end(),
       [thresh](double x) {
         return std::abs(x) < 0.8 * thresh;
     });
 
     // Now check if the peak actually made it over threshold.
-    if ((it_i != wf_.end()) && (it_f != wf_.end())) {
+    if ((it_i != wfptr->end()) && (it_f != wfptr->end())) {
 
       auto mm = std::minmax_element(it_i, it_f);
 
@@ -335,28 +354,28 @@ void Fid::FindFidRange()
 
       // Turn the iterator into an index
       if (checks_out) {
-        f_wf_ = std::distance(wf_.begin(), it_f);
+        f_wf_ = std::distance(wfptr->begin(), it_f);
       }
 
     } else {
 
-      f_wf_ = std::distance(wf_.begin(), wf_.end());
+      f_wf_ = std::distance(wfptr->begin(), wfptr->end());
       break;
     }
   }
 
-  if (f_wf_ > wf_.size()-IgnoreRange){
-    f_wf_ = wf_.size()-IgnoreRange;
+  if (f_wf_ > wfptr->size()-IgnoreRange){
+    f_wf_ = wfptr->size()-IgnoreRange;
   }
 
   // Gradients can cause a waist in the amplitude.
   // Mark the signal as bad if it didn't find signal above threshold.
-  if (i_wf_ > wf_.size() * 0.95 || i_wf_ >= f_wf_) {
+  if (i_wf_ > wfptr->size() * 0.95 || i_wf_ >= f_wf_) {
 
     health_ = 0.0;
 
     i_wf_ = 0;
-    f_wf_ = wf_.size() * 0.01;
+    f_wf_ = wfptr->size() * 0.01;
   }
 }
 
@@ -572,6 +591,8 @@ double Fid::CalcZeroCountFreq()
   // set up vectors to hold relevant stuff about the important part
   temp_.resize(f_wf_ - i_wf_);
 
+  // printf("fid range: %i, %i\n", i_wf_, f_wf_);
+
   int nzeros = 0;
   bool pos = wf_[i_wf_] >= 0.0;
   bool hyst = false;
@@ -582,22 +603,24 @@ double Fid::CalcZeroCountFreq()
   double max = *mm.second;
   if (std::abs(*mm.first) > max) max = std::abs(*mm.first);
   
-  //  double max = (-(*mm.first) > *mm.second) ? -(*mm.first) : *mm.second;
-  //  double thresh = hyst_thresh_ * max;
+  // double max = (-(*mm.first) > *mm.second) ? -(*mm.first) : *mm.second;
+  double thresh = hyst_thresh_ * max;
   //  thresh = 10 * noise_;
 
   int i_zero = -1;
   int f_zero = -1;
 
+  // printf("env size: %i\n", env_.size());
+
   // iterate over vector
   for (unsigned int i = i_wf_; i < f_wf_; i++){
 
     // hysteresis check
-/*    if (hyst){
-      hyst = std::abs(wf_[i]) < hyst_thresh_ * env_[i];
+    if (hyst){
+      hyst = std::abs(wf_[i]) < thresh;
       continue;
     }
-*/
+
     // check for a sign change
     if ((wf_[i] >= 0.0) != pos){
 
@@ -617,6 +640,8 @@ double Fid::CalcZeroCountFreq()
       }
     }
   }
+
+  // printf("finished looking for zeros\n");
 
   // Use linear interpolation to find the zeros more accurately
   int i = i_zero;

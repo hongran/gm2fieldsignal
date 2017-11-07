@@ -252,7 +252,7 @@ std::vector<double>& VecAdd(std::vector<double>& a, std::vector<double>& b)
   thrust::copy(a.begin(),a.end(),d_input1.begin());
   thrust::copy(b.begin(),b.end(),d_input2.begin());
 
-  // Calculate the modulo-ed phase
+  // Calculate the sum
   thrust::transform(d_input1.begin(), d_input1.end(), d_input2.begin(), d_output.begin(),Add());
 
   thrust::copy(d_output.begin(),d_output.end(),a.begin());
@@ -279,8 +279,8 @@ std::vector<double>& VecSubtract(std::vector<double>& a, std::vector<double>& b)
   thrust::copy(a.begin(),a.end(),d_input1.begin());
   thrust::copy(b.begin(),b.end(),d_input2.begin());
 
-  // Calculate the modulo-ed phase
-  thrust::transform(d_input1.begin(), d_input1.end(), d_input2.begin(), d_output.begin(),Add());
+  // Calculate the difference
+  thrust::transform(d_input1.begin(), d_input1.end(), d_input2.begin(), d_output.begin(),Subtract());
 
   thrust::copy(d_output.begin(),d_output.end(),a.begin());
   return a;

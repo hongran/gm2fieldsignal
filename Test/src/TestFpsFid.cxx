@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <TROOT.h>
 #include <TGraph.h>
 #include <TF1.h>
 #include <TFile.h>
@@ -9,28 +10,21 @@
 
 int main(){
   TGraph * gWf = new TGraph();
+
+  int run  = 1280;
+
+  TFile* filein = new TFile(Form("data/FpsFidGraphOut%05d_tier0.root",run),"read");
+  TDirectory * d1 = (TDirectory*)filein->Get("PlotFixedProbeFid");
+  gROOT->cd();
+  int EventID = 2;
+  int ProbeID = 150;
+  TGraph *g = (TGraph*)d1->Get(Form("Event_%03d_probe_%03d",EventID,ProbeID));
+  gWf = (TGraph*)g->Clone();
+
+  filein->Close();
+  delete filein;
+
   gWf->SetName("Waveform");
-
-  std::ifstream filein;
-  //filein.open("data/fps_run_00825_probe_100_evt_664.fid",std::ios::in);
-  filein.open("data/fps_run_01041_probe_110_evt_001.fid",std::ios::in);
-  int j = 0;
-  while (!filein.eof()){
-    double y;
-    filein>>y;
- //   gWf->SetPoint(j,j*1e-6,y);
-    gWf->SetPoint(j,j*1e-7,y);
-    j++;
-  /*  int jj=0;
-    while (!filein.eof() && jj<9){
-      double yy;
-      filein>>yy;
-      jj++;
-    }
-    */
-  }
-  filein.close();
-
   //Get Arrays
   auto X = gWf->GetX();
   auto Y = gWf->GetY();
@@ -47,10 +41,13 @@ int main(){
   //Fid
   fid::Fid myFid(V,T);
   myFid.SetParameter("baseline_freq_thresh",500);
-  myFid.SetParameter("start_amplitude",0.3);
+  myFid.SetParameter("start_amplitude",0.37);
   myFid.SetParameter("filter_low_freq",500);
   myFid.SetParameter("filter_high_freq",5000000);
   myFid.SetParameter("fft_peak_width",40000);
+  myFid.SetParameter("edge_width",2e-5);
+  myFid.SetParameter("edge_ignore",6e-5);
+  myFid.SetParameter("hyst_thresh",0.7);
   for (int i=0;i<10;i++){
     fid::Fid myFid3(V,T);
     auto t0 = std::chrono::high_resolution_clock::now();
@@ -66,9 +63,9 @@ int main(){
     std::cout << "Time = "<<t<<std::endl;
   }
   myFid.Init("Standard");
-  std::cout << myFid.GetFreq("PD")<<std::endl;
+  std::cout<<"PD: " << myFid.GetFreq("PD")<<std::endl;
+  std::cout<<"ZC: " << myFid.GetFreq("ZC")<<std::endl;
 //  std::cout << myFid.GetFreq("LZ")<<std::endl;
-  std::cout << myFid.GetFreq("ZC")<<std::endl;
   std::cout << myFid.amp()<<std::endl;
   std::cout << myFid.snr()<<std::endl;
 //  myFid.CalcLorentzianFreq();
@@ -79,6 +76,7 @@ int main(){
   auto Psd = myFid.psd();
   auto Baseline = myFid.baseline();
   auto Wf_filter = myFid.filtered_wf();
+  auto Wf_corrected = myFid.wf();
   auto Wf_im = myFid.wf_im();
   auto Phi = myFid.phi();
   auto Env = myFid.env();
@@ -105,6 +103,13 @@ int main(){
 
   for (int i=0;i<Wf_filter.size();i++){
     gWf_filter->SetPoint(i,tm[i],Wf_filter[i]);
+  }
+
+  TGraph * gWf_corrected = new TGraph();
+  gWf_corrected->SetName("Wf_corrected");
+
+  for (int i=0;i<Wf_corrected.size();i++){
+    gWf_corrected->SetPoint(i,tm[i],Wf_corrected[i]);
   }
 
   TGraph * gWf_im = new TGraph();
@@ -143,6 +148,7 @@ int main(){
   gWf->Write();
   gPsd->Write();
   gBaseline->Write();
+  gWf_corrected->Write();
   gWf_filter->Write();
   gWf_im->Write();
   gPhi->Write();

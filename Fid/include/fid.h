@@ -55,9 +55,9 @@ class Fid {
   
   // Simplified frequency extraction
   double GetFreq(const std::string& method_name);
-  double GetFreq(const Method m = PD);
+  double GetFreq(const Method m = PH);
   double GetFreqError(const std::string& method_name);
-  double GetFreqError(const Method m = PD);
+  double GetFreqError(const Method m = PH);
 
   void CalcFreq();
 
@@ -151,7 +151,7 @@ class Fid {
   //Parameters
   double edge_width_ = 2e-5;
   double edge_ignore_ = 6e-5;
-  double start_amplitude_ = 0.05;
+  double start_amplitude_ = 0.37;
   double baseline_freq_thresh_ = 500.0;
   double filter_low_freq_ = 20000.0;
   double filter_high_freq_ = 80000.0;
@@ -160,7 +160,7 @@ class Fid {
   double hyst_thresh_ = 0.7;
   double snr_thresh_ = 10.0;
   double len_thresh_ = 0.025;
-  Method freq_method_ = PD;
+  Method freq_method_ = PH;
 
   // For fits.
   std::vector<double> guess_;

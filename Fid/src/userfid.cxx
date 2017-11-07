@@ -38,8 +38,8 @@ void UserFid::LoadParams(std::string conf_file)
 
   // analysis parameters
   fft_peak_width_ = pt.get<int>("params.fft_peak_width", fft_peak_width_);
-  edge_ignore_ = pt.get<int>("params.edge_ignore", edge_ignore_);
-  edge_width_ = pt.get<int>("params.edge_width", edge_width_);
+  edge_ignore_ = pt.get<double>("params.edge_ignore", edge_ignore_);
+  edge_width_ = pt.get<double>("params.edge_width", edge_width_);
   start_amplitude_ = pt.get<double>("params.start_amplitude", start_amplitude_);
   centroid_thresh_ = pt.get<double>("params.centroid_thresh", centroid_thresh_);
   hyst_thresh_ = pt.get<double>("params.hyst_thresh", hyst_thresh_);
