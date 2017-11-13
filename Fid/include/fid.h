@@ -127,26 +127,30 @@ class Fid {
   void FreqFit(TF1& func);
  protected:
   
+  unsigned int NBatch;	//number of batches, or number of fids
+  unsigned int fid_size; //size (length) of each fid (batch)
+
   // Private Member Variables
-  unsigned int i_wf_; // start and stop of relevant data
-  unsigned int f_wf_;
-  unsigned int i_fft_;
-  unsigned int f_fft_;
-  unsigned int max_idx_fft_;
+  std::vector<unsigned> int i_wf_; // start and stop of relevant data
+  std::vector<unsigned> int f_wf_;
+  std::vector<unsigned> int i_fft_;
+  std::vector<unsigned> int f_fft_;
+  std::vector<unsigned int> max_idx_fft_;
 
   // Waveform characteristics
-  double mean_;
-  double noise_;
-  double max_amp_;
-  double snr_;
+  std::vector<double> mean_;
+  std::vector<double> noise_;
+  std::vector<double> snr_;
+  std::vector<double> max_amp_;
+  std::vector<double> act_length_; //Fid active length, when max amp decays to its 1/e
+  std::vector<ushort> health_; // percentage between 0 and 100.
 
 //  double freq_;
 //  double freq_err_;
   //Store freq from all methods
-  double freq_array_[8];
-  double freq_err_array_[8];
-  double chi2_; // Store the most recent chi2
-  ushort health_; // percentage between 0 and 100.
+  std::vector<std::vector<double>> freq_array_;
+  std::vector<std::vector<double>> freq_err_array_;
+  std::vector<double> chi2_; // Store the most recent chi2
 
   //Parameters
   double edge_width_ = 2e-5;
@@ -164,9 +168,9 @@ class Fid {
 
   // For fits.
   std::vector<double> guess_;
-  TF1 f_fit_;  
-  TGraph gr_time_series_;
-  TGraph gr_freq_series_;
+  std::vector<TF1> f_fit_;  
+  std::vector<TGraph> gr_time_series_;
+  std::vector<TGraph> gr_freq_series_;
 
   //FFT Done Flag
   bool FFTDone = false;
