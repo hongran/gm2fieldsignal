@@ -231,6 +231,51 @@ void FidFactory::GradientFid(const std::vector<double>& grad,
   if (discrete_) dsp::floor(wf);
 }
 
+void FidFactory::GradientFid_Bugao(std::vector<double>& wf, std::vector<double>& tm, std::vector<double>& fq)
+{ 
+  wf.assign(tm.size(), 0.0);
+
+  int length = fq.size();
+  double wf_temp;
+
+  // Define the waveform
+  double temp;
+  double w;
+  //double w = dsp::kTau * (larmor_freq_ - mixdown_freq_);
+  double phi = mixdown_phi_;
+  double tau = 1.0 / gamma_1_;
+  double amp = amplitude_;
+  double base = baseline_;
+
+  for (int i=0;i<length;i++){
+    w = dsp::kTau * fq[i];
+    for (int j=0;j<tm.size();j++){
+
+      if (tm[j] >= pulse_time_){
+
+	temp = amp * std::exp(-(tm[j] - pulse_time_) / tau);
+	temp *= std::sin((tm[j]) * w + phi);
+	wf_temp = temp + base;
+
+      } else {
+
+	wf_temp = base;
+
+      }
+
+      wf[j] += wf_temp;
+
+    }
+  }
+  for (int j=0;j<tm.size();j++){
+    wf[j] /= length;
+  }  
+
+  if (addnoise_) dsp::addwhitenoise(wf, signal_to_noise_);
+
+  if (discrete_) dsp::floor(wf);
+} 
+
 
 void FidFactory::PrintDiagnosticInfo()
 {

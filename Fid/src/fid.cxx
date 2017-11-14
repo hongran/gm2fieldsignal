@@ -726,7 +726,7 @@ double Fid::CalcAnalyticalFreq()
   return freq_array_[AN];
 }
 
-/*
+
 double Fid::CalcLorentzianFreq()
 {
   //Requires FFT
@@ -746,40 +746,8 @@ double Fid::CalcLorentzianFreq()
   freq_array_[LZ] = f_fit_.GetParameter(0);
 
   return freq_array_[LZ];
-}*/
-
-double Fid::CalcLorentzianFreq()
-{
-  //Requires FFT
-  if (!FFTDone)return 0;
-  //Lorentzian function
-  //[2] / (1 + ((x - [0]) / (0.5 * [1]))^2) + [3]
-  //calculate[3]
-  std::vector<double> parameter(3);
-  double bkg = 0;
-  for(int i=i_fft_-50 ; i-i_fft_<0 ; i++)
-  {
-    if(i>0)
-    {
-      bkg=bkg+psd_[i];
-    }
-    else 
-    {
-      ;
-    }
-  }
-  bkg/=50.0;
-  //inverse the data
-  for(int i=i_fft_ ; i-f_fft_<=0 ; i++)
-  {
-    psd_[i]=1/(psd_[i]-bkg);
-  }
-  //use linear fit
-  dsp::linear_fit(fftfreq_,psd_,i_fft_,f_fft_,3,parameter,res_);
-  //change the parameter back
-  freq_array_[LZ] = -parameter[1]*0.5/parameter[2];
-  return freq_array_[LZ];
 }
+
 
 double Fid::CalcSoftLorentzianFreq()
 {

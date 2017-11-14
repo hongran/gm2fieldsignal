@@ -57,6 +57,7 @@ class FidFactory
 
   // member methods
   void IdealFid(std::vector<double>& wf, std::vector<double>& tm);
+  void GradientFid_Bugao(std::vector<double>& wf, std::vector<double>& tm, std::vector<double>& fq);
   void SimulateFid(std::vector<double>& wf, std::vector<double>& tm);
   void GradientFid(const std::vector<double>& grad, std::vector<double>& wf);
 

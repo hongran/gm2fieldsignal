@@ -7,18 +7,17 @@
 #include <chrono>
 
 #include "fid.h"
-#include <stdlib.h>
 
-int main(int argc,char ** argv){
+int main(){
   TGraph * gWf = new TGraph();
 
-  int run  = atoi(argv[1]);
+  int run  = 1280;
 
   TFile* filein = new TFile(Form("data/FpsFidGraphOut%05d_tier0.root",run),"read");
   TDirectory * d1 = (TDirectory*)filein->Get("PlotFixedProbeFid");
   gROOT->cd();
-  int EventID = atoi(argv[2]);
-  int ProbeID = atoi(argv[3]);
+  int EventID = 2;
+  int ProbeID = 150;
   TGraph *g = (TGraph*)d1->Get(Form("Event_%03d_probe_%03d",EventID,ProbeID));
   gWf = (TGraph*)g->Clone();
 
@@ -66,12 +65,7 @@ int main(int argc,char ** argv){
   myFid.Init("Standard");
   std::cout<<"PD: " << myFid.GetFreq("PD")<<std::endl;
   std::cout<<"ZC: " << myFid.GetFreq("ZC")<<std::endl;
-  auto t0lz = std::chrono::high_resolution_clock::now();
-  std::cout<<"LZ: " << myFid.GetFreq("LZ")<<std::endl;
-  auto t1lz = std::chrono::high_resolution_clock::now();
-  auto dtnlz = t1lz.time_since_epoch() - t0lz.time_since_epoch();
-  double tlz = std::chrono::duration_cast<std::chrono::nanoseconds>(dtnlz).count();
-  std::cout << "Time LZ = "<<tlz<<std::endl;
+//  std::cout << myFid.GetFreq("LZ")<<std::endl;
   std::cout << myFid.amp()<<std::endl;
   std::cout << myFid.snr()<<std::endl;
 //  myFid.CalcLorentzianFreq();
