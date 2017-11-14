@@ -265,6 +265,22 @@ int convolve(const std::vector<double>& v,
 
 int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const unsigned int i_idx, const unsigned int f_idx ,  const size_t NPar, std::vector<double>& ParList, std::vector<double>& Res);
 
+class IntegratedProcessor{
+  public:
+    IntegratedProcessor(unsigned int len, unsigned int BatchNum);
+    int SetFilterWindow(double low, double high );
+    int Process(const std::vector<double>& wf,const std::vector<double>& tm, std::vector<double>& freq,
+	std::vector<double>& fwf, std::vector<double>& iwf, std::vector<double>& baseline,
+	std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env);
+  protected:
+    unsigned int Length;
+    unsigned int NBatch;
+    double WindowFilterLow;
+    double WindowFilterHigh;
+    bool FreqAnaSwitch;
+    double Freq;
+    double FreqErr;
+};
 
 } // ::dsp
 
