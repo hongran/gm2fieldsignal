@@ -325,4 +325,23 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
   return 0;
 }
  
+//class IntegratedProcessor
+
+IntegratedProcessor::IntegratedProcessor(unsigned int len, unsigned int BatchNum):
+  Length(len),NBatch(BatchNum)
+{}
+
+
+int IntegratedProcessor::SetFilterWindow(double low, double high )
+{
+  return 0;
+}
+
+int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector<double>& tm, std::vector<double>& freq,
+    std::vector<double>& fwf, std::vector<double>& iwf, std::vector<double>& baseline,
+    std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env)
+{
+  return 0;
+}
+
 } // ::dsp
