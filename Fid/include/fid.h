@@ -49,15 +49,19 @@ class Fid {
   // Default ctors/dtors.
   Fid();
   Fid(const std::vector<double>& wf, const std::vector<double>& tm);
+  Fid(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize);
   Fid(const std::vector<double>& wf);
   ~Fid() {};
   void Init(std::string Option = std::string("Standard"));
+
+  //Waveform set function
+  SetWf(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize);
   
   // Simplified frequency extraction
-  double GetFreq(const std::string& method_name);
-  double GetFreq(const Method m = PH);
-  double GetFreqError(const std::string& method_name);
-  double GetFreqError(const Method m = PH);
+  double GetFreq(const std::string& method_name, unsigned int Index = 0);
+  double GetFreq(const Method m = PH, unsigned int Index = 0);
+  double GetFreqError(const std::string& method_name, unsigned int Index = 0);
+  double GetFreqError(const Method m = PH, unsigned int Index = 0);
 
   void CalcFreq();
 
@@ -75,30 +79,32 @@ class Fid {
   const std::vector<dsp::cdouble>& fid_fft () const { return fid_fft_; }; //spectrum after fft
   const std::vector<double>& wf_im () const { return wf_im_; }; //harmonic conjugate of the waveform
 
-  const double* freq_array() const {  return freq_array_;  }
-  const double* freq_err_array() const { return freq_err_array_; };
+  std::vector<std::vector<double>> freq_array() const {  return freq_array_;  }
+  std::vector<std::vector<double>> freq_err_array() const { return freq_err_array_; };
 
-  const double fid_time() const { return tm_[f_wf_] - tm_[i_wf_]; };
   //const double snr() const { return pow(max_amp_ / noise_, 2); };
-  const double noise() const { return noise_; };
-  const double snr() const { return snr_; };
-  const double amp() const { return max_amp_; };
-  const bool isgood() const { return health_ > 0.0; };
-  const ushort health() const { return health_; };
-  const int freq_method() const { return freq_method_; };
+  const double noise(unsigned int Index=0) const { return noise_[Index]; };
+  const double snr(unsigned int Index=0) const { return snr_[Index]; };
+  const double amp(unsigned int Index=0) const { return max_amp_[Index]; };
+  const bool isgood(unsigned int Index=0) const { return health_[Index] > 0.0; };
+  const ushort health(unsigned int Index=0) const { return health_[Index]; };
+  const int freq_method(unsigned int Index=0) const { return freq_method_[Index]; };
+  const double fid_time(unsigned int Index=0) const { return tm_[Index*fid_size+f_wf_[Index]] - tm_[Index*fid_size+i_wf_[Index]]; };
+  const double act_length_(unsigned int Index=0) const { return act_length_[Index]; };
 
-  const unsigned int& i_wf() { return i_wf_; };
-  const unsigned int& f_wf() { return f_wf_; };
-  const unsigned int& i_fft() { return i_fft_; };
-  const unsigned int& f_fft() { return f_fft_; };
+  const unsigned int& i_wf(unsigned int Index=0) { return i_wf_[Index]; };
+  const unsigned int& f_wf(unsigned int Index=0) { return f_wf_[Index]; };
+  const unsigned int& i_fft(unsigned int Index=0) { return i_fft_[Index]; };
+  const unsigned int& f_fft(unsigned int Index=0) { return f_fft_[Index]; };
 
-  const double& chi2() const { return chi2_; };
-  const TF1&    f_fit() const { return f_fit_; };
-  const TGraph& gr_time_series() const { return gr_time_series_; };
-  const TGraph& gr_freq_series() const { return gr_freq_series_; };
+  const double& chi2(unsigned int Index=0) const { return chi2_[Index]; };
+  const TF1&    f_fit(unsigned int Index=0) const { return f_fit_[Index]; };
+  const TGraph& gr_time_series(unsigned int Index=0) const { return gr_time_series_[Index]; };
+  const TGraph& gr_freq_series(unsigned int Index=0) const { return gr_freq_series_[Index]; };
 
   // Set parameters
   void SetParameter(const std::string& Name, double Value);
+  //Set noise and baselien by user
   void SetNoise(double NoiseValue);
   void SetBaseline(const std::vector<double>& bl);
 
