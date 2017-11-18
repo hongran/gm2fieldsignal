@@ -137,10 +137,10 @@ class Fid {
   unsigned int fid_size; //size (length) of each fid (batch)
 
   // Private Member Variables
-  std::vector<unsigned> int i_wf_; // start and stop of relevant data
-  std::vector<unsigned> int f_wf_;
-  std::vector<unsigned> int i_fft_;
-  std::vector<unsigned> int f_fft_;
+  std::vector<unsigned int> i_wf_; // start and stop of relevant data
+  std::vector<unsigned int> f_wf_;
+  std::vector<unsigned int> i_fft_;
+  std::vector<unsigned int> f_fft_;
   std::vector<unsigned int> max_idx_fft_;
 
   // Waveform characteristics
