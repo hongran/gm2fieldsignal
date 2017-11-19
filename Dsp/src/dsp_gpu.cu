@@ -926,8 +926,210 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
   return 0;
 }
 
-//class IntegratedProcessor
+//****************************************************************************8
+void dsp::FindFidRange(double start_amplitude_,double edge_ignore_,double Length, double NBatch,std::vector<double>& max_amp_,std::vector<double>&filtered_wf_,std::vector<double>&tm_,std::vector<double>&i_wf_,std::vector<double>&f_wf_,std::vector<double>&health_)
+  // Find the starting and ending points
+bool checks_out;
+std::vector<double> thresh;
+std::transform(max_amp_.begin(),max_amp_.end(),thresh.begin(),std::bind1st(std::multiplies<double>(),start_amplitude_));
+int IgnoreRange = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
+//check each signal and get the range
+auto wfptr = filtered_wf_.begin();
+std::vector<double>::iterator it_i;
+std::vector<double>::iterator it_f;
+std::vector<double>::iterator mm;
+for(int i=0;i<NBatch;i++)
+{
+checks_out = false;
+  // Find the first element with magnitude larger than thresh
+  while (!checks_out) {
+// Check if the point is above threshold.
+    it_i = std::find_if(std::next(wfptr,IgnoreRange), std::next(wfptr,Length-1),
+      [thresh](double x) {
+        return std::abs(x) > thresh[i];
+    });
 
+    // Make sure the point is not with one of the vector's end.
+    if ((it_i != std::next(wfptr,Length-1)) && (it_i + 1 != std::next(wfptr,Length-1))) {
+
+      // Check if the next point is also over threshold.
+      checks_out = std::abs(*(it_i + 1)) > thresh;
+
+      // Increase the comparison starting point.
+      it_1 = it_i + 1;
+
+      // Turn the iterator into an index
+      if (checks_out) {
+        i_wf_[i] = std::distance(wfptr, it_i);
+      }
+
+    } else {
+
+      // If we have reached the end, mark it as the last.
+      i_wf_[i] =Length;
+      break;
+    }
+  }
+// Find the next element with magnitude lower than thresh
+  auto it_2 = std::find_if(std::next(wfptr,i_wf_-1), std::next(wfptr,Length-1),
+      [thresh](double x) {
+        return std::abs(x) < 0.8 * thresh[i];
+  });
+
+  if ((it_2 != std::next(wfptr,Length-1))) && (it_2 + 1 != std::next(wfptr,Length-1)))) {
+
+    checks_out = false;
+
+  } else {
+
+    f_wf_ = Length;
+    checks_out = true;
+  }
+
+  while (!checks_out) {
+
+    // Find the range around a peak.
+    it_i = std::find_if(it_2, std::next(wfptr,Length-1),
+      [thresh](double x) {
+        return std::abs(x) > 0.8 * thresh;
+    });
+
+    auto it_f = std::find_if(it_i + 1, std::next(wfptr,Length-1),
+      [thresh](double x) {
+        return std::abs(x) < 0.8 * thresh;
+    });
+
+    // Now check if the peak actually made it over threshold.
+    if ((it_i != std::next(wfptr,Length-1)) && (it_f != std::next(wfptr,Length-1))) {
+
+       mm = std::minmax_element(it_i, it_f);
+
+      if ((*mm.first < -thresh[j]) || (*mm.second > thresh[j])) {
+
+        it_2 = it_f;
+
+      } else {
+
+        checks_out = true;
+      }
+
+      // Turn the iterator into an index
+      if (checks_out) {
+        f_wf_[j] = std::distance(std::next(wfptr,Length-1), it_f);
+      }
+
+    } else {
+
+      f_wf_[j] = std::distance(wfptr, std::next(wfptr,Length-1)));
+      break;
+    }
+  }
+
+  if (f_wf_[j] > Length-IgnoreRange){
+    f_wf_[j] = Length-IgnoreRange;
+  }
+
+  // Gradients can cause a waist in the amplitude.
+  // Mark the signal as bad if it didn't find signal above threshold.
+  if (i_wf_[j] > Length* 0.95 || i_wf_[j] >= f_wf_[j]) {
+
+    health_[j] = 0.0;
+
+    i_wf_[j] = 0;
+    f_wf_[j] = Length * 0.01;
+  }
+}
+wfptr=std::next(wfptr,Length);
+}
+
+struct im_harmonic
+{
+im_harmonic(){}
+_device_ double operator()(thrust::complex<double>x){
+auto z=-x.real();
+x.real()=x.imag();
+x.imag()=z;
+}
+}
+
+//structure of shift and square
+struct varianceshiftop
+{ 
+varianceshiftop(double m):mean(m)
+const double mean;
+_device_ double oprerator()(double data) const 
+{
+return::pow(data-mean,2.0);
+}
+}
+
+//structure of compare
+struct compare
+{ 
+compare(){}
+_device_ double oprerator()(double x, double y); 
+{
+if(x>y)
+{
+return x;
+}
+else
+{
+return y;
+}
+}
+}
+
+//structure of Sqrt
+struct Sqrt
+{ 
+Sqrt(){}
+_device_ double oprerator()(double x); 
+{
+return sqrt(x);
+}
+
+class IntegratedProcessor{
+  public:
+    IntegratedProcessor(unsigned int len, unsigned int BatchNum);
+    int SetFilterWindow(double low, double high );
+//freq is the x coordinate and freq_y is y coordinate for fourier transformation
+    int Process(const std::vector<double>& wf,const std::vector<double>& tm, std::vector<double>& freq,
+	std::vector<double>& fwf, std::vector<double>& iwf, std::vector<double>& baseline,
+	std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,std::vector<double> max_idx_fft,
+std::vector<double>& i_fft,std::vector<double>& f_fft, std::vector<double> max_amp,std::vector<double>& health,std::vector<double>& filtered_wf);
+
+  protected:
+    unsigned int Length;
+//length of each FID
+    unsigned int NBatch;
+    double WindowFilterLow;
+    double WindowFilterHigh;
+    bool FreqAnaSwitch;
+    double Freq;
+    double FreqErr;
+    double Baseline_Freq_Thresh;
+
+double edge_ignore;
+double edge_width;
+double kMaxPhaseJump;
+double start_amplitude;
+double kTau;
+//not sure about this
+double fft_peak_index_width;
+
+
+//make plans and save thm as static variable
+static cufftHandle plan1;
+cufftPlan1d(&plan1, Length, CUFFT_D2Z, NBatch);
+static cufftHandle plan2;
+cufftPlan1d(&plan2, Length, CUFFT_Z2D, NBatch);
+cufft cufftHandle plan3;
+cufftPlan1d(&plan3, Length, CUFFT_Z2D, NBatch);
+cufftHandle plan4;
+cufftPlan1d(&plan4, Length, CUFFT_Z2D, NBatch);
+};
+}
 IntegratedProcessor::IntegratedProcessor(unsigned int len, unsigned int BatchNum):
   Length(len),NBatch(BatchNum)
 {}
@@ -938,11 +1140,297 @@ int IntegratedProcessor::SetFilterWindow(double low, double high )
   return 0;
 }
 
+
+
+//_global_ void window_filter(cufftDoubleComplex* y, double interval, double low, double high, size_t N, NBatch)
+//{
+//int i=blockDim.x * blockIdx.x + threadIdx.x;
+//_device_ double fmod(double x, double y)
+//unsigned int i_start=std::floor(
+//if (i<)
+//
+//}
+
+
 int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector<double>& tm, std::vector<double>& freq,
     std::vector<double>& fwf, std::vector<double>& iwf, std::vector<double>& baseline,
-    std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env)
+    std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,std::vector<double> max_idx_fft,
+std::vector<double> i_fft,std::vector<double> f_fft)
 {
+//CalcFftFreq*********************************************
+double dt=tm[1]-tm[0];
+// Handle both even and odd cases properly.
+if (Length % 2 == 0) {
+unsigned int m=Length/2+1;
+for(unsigned int j=0; j<NBatch; j++){ 
+for (unsigned int i = 0; i < m; i++) {
+freq[i+j*m] = i / (dt * Length);
+}
+}
+} else {
+unsigned int m=(Length+1)/2;
+for(unsigned int j=0; j<NBatch; j++){ 
+for (unsigned int i = 0; i < m; i++) {
+freq[i+j*m] = i / (dt * Length);
+}
+}
+}
+//rfft****************************************************
+//constant
+double Nroot=std::sqrt(Length);
+//CUDA FFT
+//Initialize the result vector
+//fftDoubleReal *d_data;
+//fftDoubleComplex *d_data_res;
+const cufftDoubleReal *h_data=reinterpret_cast<const cufftDoubleReal *>(&wf[0]);
+//Allocate memory
+cudaMalloc((void **)&d_data, sizeof(cufftDoubleReal)*Length*NBatch);
+cudaMalloc((void **)&d_data_res, sizeof(dufftDoubleComplex)*m*NBatch);
+//Copy data
+cudaMemcpy(d_data, h_data, sizeof(cufftDoubleReal)*Length*NBatch, cudaMemcpyHostToDevice);
+//Execute
+cufftExecD2Z(plan1, d_data, d_data_res);
+//Renormalize!! Maybe we could change the parameter!
+dim3 Dimblock (16); 
+dim3 DimGrid (Length*NBatch/16+1);
+ComplexScale<<<DimGrid, DimBlock>>>(1/Nroot, d_data_res, m*Length);
+//We don't need d_data anymore
+cudaFree(d_data);
+//create vector
+static thrust:device_vector<thrust::complex<double>> d_fid_fft(&d_data_res[0],&d_data_res[m*Length]);
+//window_filter*******************************************
+//We could use thrust copy if necessary
+auto interval=freq[1]-freq[0];
+unsigned int i_start = std::floor((WindowFilterLow-freq[0])/interval);
+unsigned int i_end = std::floor((WindowFilterHigh-freq[0])/interval);
+//result vector 
+static thrust:device_vector<thrust::complex<double>> d_fid_fft_filtered=d_fid_fft;
+//filter
+for(unsigned int j=0; j<Nbatch; j++)
+{
+for(unsigned int i=0; i<i_start)
+{
+d_fid_fft_filtered[i+j*NBatch]=thrust::complex<double>(0.0,0.0);
+}
+for(unsigned int i=i_end+1; i<m)
+{
+d_fid_fft_filtered[i+j*NBatch]=thrust::complex<double>(0.0,0.0);
+}
+}
+//irfft***************************************************
+//Instantiate the result vector
+cufftDoubleComplex *filtered_wf2;
+//Allocate memory
+cudaMalloc((void **)&filtered_wf2, sizeof(cufftDoubleReal) * Length * NBatch);
+//Execute
+cufftExecZ2D(plan2, thrust::raw_pointer_cast(d_fid_fft.data()), filtered_wf2);
+//save in vector d_filtered_wf
+static thrust:device_vector<double> d_filtered_wf(&filtered_wf2[0],&filtered_wf2[Length*NBatch]);
+//imaginary harmonic complement***************************
+//struct im_harmonic
+//{
+//im_harmonic(){}
+//_device_ double operator()(thrust::complex<double>x){
+//auto z=-x.real();
+//x.real()=x.imag();
+//x.imag()=z;
+//}
+//}
+thrust::transform(d_filtered_wf.begin(),d_filtered_wf.end(),d_filtered_wf.begin(),im_harmonic());
+//irfft***************************************************
+//Instantiate the result vector
+cufftDoubleComplex *wf_im2;
+//Allocate memory
+cudaMalloc((void **)&wf_im2, sizeof(cufftDoubleReal) * Length * NBatch);
+//Execute
+cufftExecZ2D(plan3, thrust::raw_pointer_cast(d_filtered_wf.data()), wf_im2);
+//save in vector wf_im
+static thrust:device_vector<double> d_wf_im(&wf_im2[0],&wf_im2[Length*NBatch]);
+//window_filter to get baseline*******************************************
+//We could change it to parallel setting using thrust if necessary
+//We could put it in front of first filter to save time
+auto interval=freq[1]-freq[0];
+unsigned int i_end2 = std::floor((Baseline_Freq_Thresh-freq[0])/interval);
+static thrust:device_vector<thrust::complex<double>> d_baseline_fft=d_fid_fft;
+//filter
+for(unsigned int j=0; j<Nbatch; j++)
+{
+for(unsigned int i=i_end2+1; i<m;i++)
+{
+d_baseline_fft[i2+j*NBatch]=thrust::complex<double>(0.0,0.0);
+}
+} 
+
+//irfft*******************************************
+//Instantiate the result vector
+cufftDoubleComplex *baseline2;
+//Allocate memory
+cudaMalloc((void **)&baseline2, sizeof(cufftDoubleReal) * Length * NBatch);
+//Execute
+cufftExecZ2D(plan4, thrust::raw_pointer_cast(d_baseline_fft.data()), baseline2);
+static thrust::device_vector<double> d_baseline(&baseline2[0],&baseline2[Length*NBatch]); 
+//CalcPowerEnvAndPhase******************************
+//psd we could use thrust to accelerate*************
+static thrust::device_vector<double> d_psd(NBatch*m); 
+//
+thrust::transform(d_fid_fft.begin(),d_fid_fft.end(),d_psd.begin(),thrust::norm<double>());
+//phase**********************************************
+static thrust::device_vector<double> d_phase(NBatch*Length]);
+// Calculate the modulo-ed phase
+thrust::transform(d_wf_im.begin(), d_wf_im.end(), d_filtered_wf.begin(), phase.begin(),ATan2());
+thrust::copy(d_phase.begin(),d_phase.end(),d_phase.begin());
+// Now unwrap the phase
+double thresh = 0.5 * kTau;
+double u = 0.0;
+bool gave_warning = false;
+int k = 0; // to track the winding number
+//check
+for (auto it = d_phase.begin() + 1; it != d_phase.end(); ++it) {
+    
+    // Add current total
+    *it += k * kTau;
+    u = *(it) - *(it - 1);
+    //Don't check at the end of each signal
+    int distance=thrust::distance(d_phase.begin,it);
+if(distance!=1 && (distance%Length)==1)
+{
+continue;
+}else {
+    // Check for large jumps, both positive and negative.
+    while (std::abs(u) > kMaxPhaseJump) {
+      
+      if (-u > kMaxPhaseJump) {
+        
+        if ((u + kTau > thresh) && (!gave_warning)) {
+          std::cout << "Warning: jump over threshold." << std::endl;
+          gave_warning = true;
+          break;
+        }
+        
+        k++;
+        *it += kTau;
+        
+      } else if (u > kMaxPhaseJump) {
+        
+        if ((u - kTau < -thresh) && (!gave_warning)) {
+          std::cout << "Warning: jump over threshold." << std::endl;
+          gave_warning = true;
+          break;
+        }
+        
+        k--;
+        *it -= kTau;
+      }
+
+      u = *(it) - *(it - 1);
+    }
+}
+  }
+//envelope***************************************************  
+
+  static thrust::device_vector<double> d_env(NBatch*Length);
+
+  thrust::transform(d_filtered_wf.begin(), d_filtered_wf.end(), d_wf_im.begin(), d_env.begin(),AddSquare());
+//BaselineCorrection
+//!!!!!!!!!Here I use filtered_wf to minux baseline
+static thrust::device_vector<double> d_wf_nobaseline(NBatch*Length);
+thrust::transform(d_filtered_wf.begin(),d_filtered_wf.end(),d_baseline.begin(),d_wf_nobaseline.begin(),thrust::minux<double>())
+//CalcMaxAmp*****************************************************
+//initialize MaxAmp vector
+static thrust::device_vector<double> d_MaxAmp(NBatch);
+//!!!!!!!!!!!!Something weird with the label here
+for(unsigned int i=0; i<NBatch; i++)
+{
+d_MaxAmp[i]=thrust::transform(d_filtered_wf.begin()+i*(Length),d_filtered_wf.begin()+(i+1)*Length-1,absolute_value<double>(),0,thrust::maximum<double>());
+}
+
+//FindFidRange***************************************************************
+FindFidRange(start_amplitude,edge_ignore,Length, NBatch,&max_amp,&filtered_wf,&tm,&iwf,&fwf_,&health);
+
+//CalcNoise*******************************************************
+//maybe we have use these parameters before
+int start=edge_ignore/(tm[1]-tm[0]);
+int end=edge_width/(tm[1]-tm[0])+start;
+//stdev-------GPUversion
+//mean of each vector
+static thrust:device_vector<double> mean1(NBatch);
+static thrust:device_vector<double> mean2(NBatch);
+//!!!!!!!!!!!!!!Something weird with the label here
+for(unsigned int i=0; i<NBatch;i++)
+{
+mean1[i]=thrust::reduce(d_filtered_wf.begin()+i*(Length)+start,d_filtered_wf.begin+i*(Length)+end,0)/Length;
+}
+for(unsigned int i=0; i<NBatch;i++)
+{
+mean2[i]=thrust::reduce(d_filtered_wf.rbegin()+i*Length+start,d_filtered_wf.rbegin+i*Length+end,0)/Length;
+}
+//structure of shift and square
+//struct varianceshiftop
+//{ 
+//varianceshiftop(double m):mean(m)
+//const double mean;
+//_device_ double oprerator()(double data) const 
+//{
+//return::pow(data-mean,2.0);
+//}
+//}
+//noise of each vector
+static thrust:device_vector<double> head(NBatch);
+static thrust:device_vector<double> tail(NBatch);
+for(unsigned int i=0;i<NBatch;i++)
+{
+head[i]=thrust::transform_reduce(d_filtered_wf.begin+i*(Length)+start,d_filtered_wf.begin+i*(Length)+end,varianceshiftop(mean[i]),0.0,thrust::plus<double>());
+}
+for(unsigned int i=0;i<NBatch;i++)
+{
+tail[i]=thrust::transform_reduce(d_filtered_wf.begin+i*(Length)+start,d_filtered_wf.begin+i*(Length)+(end),varianceshiftop(mean[i]),0.0,thrust::plus<double>());
+}
+//final result of each vector
+//static thrust:device_vector<double> d_noise(NBatch);
+//structure of compare
+//struct compare
+//{ 
+//compare(){}
+//_device_ double oprerator()(double x, double y); 
+//{
+//if(x>y)
+//{
+//return x;
+//}
+//else
+//{
+//return y;
+//}
+//}
+//}
+thrust::transforms(head.begin(),head.end(),tail.begin(),d_noise.begin(),compare());
+//structure of Sqrt
+//struct Sqrt
+//{ 
+//Sqrt(){}
+//_device_ double oprerator()(double x); 
+//{
+//return sqrt(x);
+//}
+thrust::transform(d_noise.begin(),d_noise.end(),d_noise.begin(),Sqrt());
+//max_idx_fft and i_fft , f_fft 
+//this is in host
+unsigned int fft_peak_index_width = static_cast<int>(fft_peak_wdth/interval);
+for(j=0;j<NBatch;j++)
+{
+max_idx_fft[j]=std::distance(d_psd.begin+j*Length,std::max_element(d_psd.begin+j*Length+1,d_psd.begin+(j+1)*Length)-1);
+if(max_idx_fft[j]<fft_peak_index_width) i_fft[j]=1;
+else i_fft[j]=max_idx_fft[j]-fft_peak_index_width;
+f_fft[j]=max_idx_fft[j]+fft_peak_index_width;
+if(f_fft[j]>m) f_fft[j]=m;
+}
+//CudaFree!!!!
+
+//copy vector out
+
+
   return 0;
 }
 
-} // ::dsp
+} // ::dsp//class IntegratedProcessor
+

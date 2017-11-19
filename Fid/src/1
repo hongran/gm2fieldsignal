@@ -894,7 +894,7 @@ double Fid::CalcPhaseDerivFreq(int poln)
   return freq_array_[PD];
 } 
 
-/*
+
 double Fid::CalcSinusoidFreq()
 {
   //Requires FFT
@@ -936,7 +936,7 @@ double Fid::CalcSinusoidFreq()
 
   return freq_array_[SN];
 }
-*/
+
 
 Method Fid::ParseMethod(const std::string& m)
 {
