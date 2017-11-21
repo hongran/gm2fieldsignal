@@ -1,10 +1,10 @@
 # Grab the targets and sources as two batches
 SOURCES = $(wildcard src/*.cxx)
 HEADERS = $(wildcard include/*)
-OBJECTS = obj/dsp_common.o obj/dsp_cpu.o
+OBJECTS = obj/dsp_cpu.o
 
 GPU_SOURCES = $(wildcard src/*.cu)
-GPU_OBJECTS = obj/dsp_common.o obj/dsp_gpu.o
+GPU_OBJECTS = obj/dsp_gpu.o
 
 
 # Versioning info

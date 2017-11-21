@@ -21,6 +21,9 @@ notes:
 #include <complex>
 #include <ctgmath>
 #include <cmath>
+#include <cuda_runtime.h>
+#include <cufft.h>
+#include <cuComplex.h>
 
 //--- other includes --------------------------------------------------------//
 #include <armadillo>
@@ -264,6 +267,42 @@ int convolve(const std::vector<double>& v,
              std::vector<double>& res);
 
 int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const unsigned int i_idx, const unsigned int f_idx ,  const size_t NPar, std::vector<double>& ParList, std::vector<double>& Res);
+
+class IntegratedProcessor{
+  public:
+    IntegratedProcessor(unsigned int len, unsigned int BatchNum);
+    int SetFilters(double low, double high, double baseline_thresh );
+    int SetEdges(double ignore, double width);
+    void AnaSwith(bool sw);
+    int Process(const std::vector<double>& wf,const std::vector<double>& tm, std::vector<double>& freq,
+	std::vector<double>& fwf, std::vector<double>& iwf, std::vector<double>& baseline,
+	std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,
+	std::vector<double> max_idx_fft,std::vector<double>& i_fft,std::vector<double>& f_fft, 
+	std::vector<double> max_amp,std::vector<double>& health,std::vector<double>& filtered_wf);
+  protected:
+    unsigned int Length;
+    unsigned int NBatch;
+    double WindowFilterLow;
+    double WindowFilterHigh;
+    double Baseline_Freq_Thresh;
+    double edge_ignore;
+    double edge_width;
+    bool FreqAnaSwitch;
+    double Freq;
+    double FreqErr;
+    //
+    double kMaxPhaseJump;
+    double start_amplitude;
+    double kTau;
+    //not sure about this
+    double fft_peak_index_width;
+
+    //FFT plans
+
+    cufftHandle planD2Z;
+    cufftHandle planZ2D;
+    cufftHandle planZ2Z;
+};
 
 } // ::dsp
 
