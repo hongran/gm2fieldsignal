@@ -5,9 +5,6 @@ namespace fid {
 
 Fid::Fid()
 {
-  NBatch = 0;
-  fid_size = 0;
-  FFTDone = false;
   for (int i=0 ; i<8 ; i++){
     freq_array_[i] = 0;
     freq_err_array_[i] = 0;
@@ -16,9 +13,6 @@ Fid::Fid()
 
 Fid::Fid(const std::vector<double>& wf, const std::vector<double>& tm)
 {
-  NBatch = 1;
-  fid_size = wf.size();
-  FFTDone = false;
   for (int i=0 ; i<8 ; i++){
     freq_array_[i] = 0;
     freq_err_array_[i] = 0;
@@ -28,68 +22,8 @@ Fid::Fid(const std::vector<double>& wf, const std::vector<double>& tm)
   tm_ = tm;
 }
 
-Fid::Fid(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize)
-{
-  NBatch = tNBatch;
-  fid_size = tSize;;
-  FFTDone = false;
-  if(wf.size() != NBatch*fid_size){
-    std::cout << "Warning: waveform vector size does not match the given arguments."<<std::endl;
-  }
-  for (int i=0 ; i<8 ; i++){
-    freq_array_[i] = 0;
-    freq_err_array_[i] = 0;
-  }
-  // Copy the waveform and time to member vectors.
-  wf_ = wf;
-  tm_.resize(wf_.size());
-  for (unsigned int i;i<NBatch;i++){
-    for (unsigned int j;j<fid_size;j++){
-      tm_[i*fid_size+j] = j*dt;
-    }
-  }
-}
-
-Fid::SetWf(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize)
-{
-  //Clear the existing wf
-  wf_.clear();
-  tm_.clear(); //time stamps
-  filtered_wf_.clear(); // filtered waveform
-  baseline_.clear(); // baseline
-  fid_fft_.clear(); //spectrum after fft
-  wf_im_.clear(); //harmonic conjugate of the waveform
-  psd_.clear(); //power density
-  env_.clear(); //envelope
-  phi_.clear(); //monotonic phase
-  fftfreq_.clear(); // fft frequency stamp
-  res_.clear(); //residual of fit
-  //Renew parameters
-  NBatch = tNBatch;
-  fid_size = tSize;;
-  FFTDone = false;
-  if(wf.size() != NBatch*fid_size){
-    std::cout << "Warning: waveform vector size does not match the given arguments."<<std::endl;
-  }
-  for (int i=0 ; i<8 ; i++){
-    freq_array_[i] = 0;
-    freq_err_array_[i] = 0;
-  }
-  // Copy the waveform and time to member vectors.
-  wf_ = wf;
-  tm_.resize(wf_.size());
-  for (unsigned int i;i<NBatch;i++){
-    for (unsigned int j;j<fid_size;j++){
-      tm_[i*fid_size+j] = j*dt;
-    }
-  }
-}
-
 Fid::Fid(const std::vector<double>& wf)
 {
-  NBatch = 1;
-  fid_size = wf.size();
-  FFTDone = false;
   for (int i=0 ; i<8 ; i++){
     freq_array_[i] = 0;
     freq_err_array_[i] = 0;
@@ -960,7 +894,7 @@ double Fid::CalcPhaseDerivFreq(int poln)
   return freq_array_[PD];
 } 
 
-/*
+
 double Fid::CalcSinusoidFreq()
 {
   //Requires FFT
@@ -1002,7 +936,7 @@ double Fid::CalcSinusoidFreq()
 
   return freq_array_[SN];
 }
-*/
+
 
 Method Fid::ParseMethod(const std::string& m)
 {
