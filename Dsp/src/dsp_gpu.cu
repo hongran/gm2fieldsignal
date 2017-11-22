@@ -1127,7 +1127,7 @@ void IntegratedProcessor::AnaSwith(bool sw)
 
 int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector<double>& tm, std::vector<double>& freq,
     std::vector<double>& fwf, std::vector<double>& iwf, std::vector<double>& baseline,
-    std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,
+    std::vector<double>& psd, std::vector<double>& phi , std::vector& phase, std::vector<double>& env,
     std::vector<double> max_idx_fft,std::vector<double>& i_fft,std::vector<double>& f_fft, 
     std::vector<double> max_amp,std::vector<double>& health,std::vector<double>& filtered_wf)
 {
@@ -1238,25 +1238,25 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //CalcPowerEnvAndPhase******************************
   thrust::device_vector<double> d_psd(NBatch*m); 
   //
-  thrust::transform(d_fid_fft.begin(),d_fid_fft.end(),d_psd.begin(),thrust::norm<double>());
+  thrust::transform(d_fid_fft.begin(),d_fid_fft.end(),d_psd.begin(),thrust::norm<thrust::complex<double>>());
   //phase**********************************************
   thrust::device_vector<double> d_phase(NBatch*Length);
   // Calculate the modulo-ed phase
-  thrust::transform(d_wf_im.begin(), d_wf_im.end(), d_filtered_wf.begin(), phase.begin(),ATan2());
-  thrust::copy(d_phase.begin(),d_phase.end(),d_phase.begin());
+  thrust::transform(d_wf_im.begin(), d_wf_im.end(), d_filtered_wf.begin(),d_phase.begin(),ATan2());
+  thrust::copy(d_phase.begin(),d_phase.end(),phase.begin());
   // Now unwrap the phase
   double thresh = 0.5 * kTau;
   double u = 0.0;
   bool gave_warning = false;
   int k = 0; // to track the winding number
   //check
-  for (auto it = d_phase.begin() + 1; it != d_phase.end(); ++it) {
+  for (auto it = phase.begin() + 1; it != phase.end(); ++it) {
 
     // Add current total
     *it += k * kTau;
     u = *(it) - *(it - 1);
     //Don't check at the end of each signal
-    int distance=thrust::distance(d_phase.begin,it);
+    int distance=thrust::distance(phase.begin(),it);
     if(distance!=1 && (distance%Length)==1)
     {
       continue;
@@ -1293,16 +1293,16 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   }
   //envelope***************************************************  
 
-  static thrust::device_vector<double> d_env(NBatch*Length);
+  thrust::device_vector<double> d_env(NBatch*Length);
 
   thrust::transform(d_filtered_wf.begin(), d_filtered_wf.end(), d_wf_im.begin(), d_env.begin(),AddSquare());
   //BaselineCorrection
   //!!!!!!!!!Here I use filtered_wf to minux baseline
-  static thrust::device_vector<double> d_wf_nobaseline(NBatch*Length);
-  thrust::transform(d_filtered_wf.begin(),d_filtered_wf.end(),d_baseline.begin(),d_wf_nobaseline.begin(),thrust::minux<double>())
+  thrust::device_vector<double> d_wf_nobaseline(NBatch*Length);
+  thrust::transform(d_filtered_wf.begin(),d_filtered_wf.end(),d_baseline.begin(),d_wf_nobaseline.begin(),thrust::minus<double>());
     //CalcMaxAmp*****************************************************
     //initialize MaxAmp vector
-    static thrust::device_vector<double> d_MaxAmp(NBatch);
+    thrust::device_vector<double> d_MaxAmp(NBatch);
   //!!!!!!!!!!!!Something weird with the label here
   for(unsigned int i=0; i<NBatch; i++)
   {
