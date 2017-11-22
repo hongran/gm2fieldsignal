@@ -1048,29 +1048,30 @@ void FindFidRange(double start_amplitude_,double edge_ignore_,double Length, dou
 struct im_harmonic
 {
   im_harmonic(){}
-  __device__ double operator()(thrust::complex<double>x){
-    auto z=-x.real();
-    x.real(x.imag());
-    x.imag(z);
+  __device__ thrust::complex<double>  operator()(thrust::complex<double>x){
+   thrust::complex<double> z;
+   z.real(x.imag());
+   z.imag(-x.real());
+   return z;
   }
-}
+};
 
 //structure of shift and square
 struct varianceshiftop
-{ 
-  varianceshiftop(double m):mean(m)
-			    const double mean;
-  __device__ double oprerator()(double data) const 
+{
+  double mean;
+  varianceshiftop(const double m) : mean(m) {}
+  __device__ double operator()(double data) const 
   {
-    return::pow(data-mean,2.0);
+    return (data-mean)*(data-mean);
   }
-}
+};
 
 //structure of compare
 struct compare
 { 
   compare(){}
-  __device__ double oprerator()(double x, double y); 
+  __device__ double operator()(double x, double y) 
   {
     if(x>y)
     {
@@ -1081,17 +1082,17 @@ struct compare
       return y;
     }
   }
-}
+};
 
 //structure of Sqrt
 struct Sqrt
 { 
   Sqrt(){}
-  __device__ double oprerator()(double x); 
+  __device__ double operator()(double x) 
   {
     return sqrt(x);
   }
-}
+};
 
 
 //IntegratedProcessor Functions
@@ -1103,7 +1104,7 @@ IntegratedProcessor::IntegratedProcessor(unsigned int len, unsigned int BatchNum
     cufftPlan1d(&planZ2Z, Length, CUFFT_Z2Z, NBatch);
 }
 
-int IntegratedProcessor::SetFilterWindow(double low, double high , double baseline_thresh)
+int IntegratedProcessor::SetFilters(double low, double high , double baseline_thresh)
 {
   WindowFilterLow = low;
   WindowFilterHigh = high;
@@ -1128,7 +1129,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
     std::vector<double>& fwf, std::vector<double>& iwf, std::vector<double>& baseline,
     std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,
     std::vector<double> max_idx_fft,std::vector<double>& i_fft,std::vector<double>& f_fft, 
-    std::vector<double> max_amp,std::vector<double>& health,std::vector<double>& filtered_wf);
+    std::vector<double> max_amp,std::vector<double>& health,std::vector<double>& filtered_wf)
 {
   //CalcFftFreq*********************************************
   double dt=tm[1]-tm[0];
@@ -1154,31 +1155,31 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   double Nroot=std::sqrt(Length);
   //CUDA FFT
   //Initialize the result vector
-  //fftDoubleReal *d_data;
-  //fftDoubleComplex *d_data_res;
+  cufftDoubleReal *d_data;
+  cufftDoubleComplex *d_data_res;
   const cufftDoubleReal *h_data=reinterpret_cast<const cufftDoubleReal *>(&wf[0]);
   //Allocate memory
   cudaMalloc((void **)&d_data, sizeof(cufftDoubleReal)*Length*NBatch);
-  cudaMalloc((void **)&d_data_res, sizeof(dufftDoubleComplex)*m*NBatch);
+  cudaMalloc((void **)&d_data_res, sizeof(cufftDoubleComplex)*m*NBatch);
   //Copy data
   cudaMemcpy(d_data, h_data, sizeof(cufftDoubleReal)*Length*NBatch, cudaMemcpyHostToDevice);
   //Execute
   cufftExecD2Z(planD2Z, d_data, d_data_res);
   //Renormalize!! Maybe we could change the parameter!
-  dim3 Dimblock (16); 
+  dim3 DimBlock (16); 
   dim3 DimGrid (m*NBatch/16+1);
   ComplexScale<<<DimGrid, DimBlock>>>(1/Nroot, d_data_res, m*NBatch);
   //create vector
-  thrust:device_vector<thrust::complex<double>> d_fid_fft(&d_data_res[0],&d_data_res[m*NBatch]);
+  thrust::device_vector<thrust::complex<double>> d_fid_fft(&d_data_res[0],&d_data_res[m*NBatch]);
   //window_filter*******************************************
   //We could use thrust copy if necessary
   auto interval=freq[1]-freq[0];
   unsigned int i_start = std::floor((WindowFilterLow-freq[0])/interval);
   unsigned int i_end = std::floor((WindowFilterHigh-freq[0])/interval);
   //result vector 
-  thrust:device_vector<thrust::complex<double>> d_fid_fft_filtered=d_fid_fft;
+  thrust::device_vector<thrust::complex<double>> d_fid_fft_filtered=d_fid_fft;
   //filter, revise
-  for(unsigned int j=0; j<Nbatch; j++)
+  for(unsigned int j=0; j<NBatch; j++)
   {
     for(unsigned int i=0; i<i_start;i++)
     {
@@ -1194,32 +1195,34 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   cufftDoubleReal *filtered_wf2;
   //Allocate memory
   cudaMalloc((void **)&filtered_wf2, sizeof(cufftDoubleReal) * Length * NBatch);
+  cuDoubleComplex* V1 = (cuDoubleComplex*)thrust::raw_pointer_cast(d_fid_fft.data());
   //Execute
-  cufftExecZ2D(planZ2D, thrust::raw_pointer_cast(d_fid_fft.data()), filtered_wf2);
+  cufftExecZ2D(planZ2D,V1, filtered_wf2);
   //save in vector d_filtered_wf
-  thrust:device_vector<double> d_filtered_wf(&filtered_wf2[0],&filtered_wf2[Length*NBatch]);
+  thrust::device_vector<double> d_filtered_wf(&filtered_wf2[0],&filtered_wf2[Length*NBatch]);
   //imaginary harmonic complement***************************
   thrust::transform(d_fid_fft_filtered.begin(),d_fid_fft_filtered.end(),d_fid_fft_filtered.begin(),im_harmonic());
   //irfft***************************************************
   //Instantiate the result vector
-  cufftDoubleComplex *wf_im2;
+  cufftDoubleReal *wf_im2;
   //Allocate memory
   cudaMalloc((void **)&wf_im2, sizeof(cufftDoubleReal) * Length * NBatch);
+  cuDoubleComplex* V2 = (cuDoubleComplex*)thrust::raw_pointer_cast(d_fid_fft.data());
   //Execute
-  cufftExecZ2D(planZ2D, thrust::raw_pointer_cast(d_fid_fft_filtered.data()), wf_im2);
+  cufftExecZ2D(planZ2D, V2, wf_im2);
   //save in vector wf_im
-  thrust:device_vector<double> d_wf_im(&wf_im2[0],&wf_im2[Length*NBatch]);
+  thrust::device_vector<double> d_wf_im(&wf_im2[0],&wf_im2[Length*NBatch]);
   //window_filter to get baseline*******************************************
   //We could change it to parallel setting using thrust if necessary
   //We could put it in front of first filter to save time
   unsigned int i_end2 = std::floor((Baseline_Freq_Thresh-freq[0])/interval);
-  thrust:device_vector<thrust::complex<double>> d_baseline_fft=d_fid_fft;
+  thrust::device_vector<thrust::complex<double>> d_baseline_fft=d_fid_fft;
   //filter, revise
-  for(unsigned int j=0; j<Nbatch; j++)
+  for(unsigned int j=0; j<NBatch; j++)
   {
     for(unsigned int i=i_end2+1; i<m;i++)
     {
-      d_baseline_fft[i2+j*NBatch]=thrust::complex<double>(0.0,0.0);
+      d_baseline_fft[i+j*NBatch]=thrust::complex<double>(0.0,0.0);
     }
   } 
 
@@ -1228,8 +1231,9 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   cufftDoubleReal *baseline2;
   //Allocate memory
   cudaMalloc((void **)&baseline2, sizeof(cufftDoubleReal) * Length * NBatch);
+  cuDoubleComplex* V3 = (cuDoubleComplex*)thrust::raw_pointer_cast(d_baseline_fft.data());
   //Execute
-  cufftExecZ2D(planZ2D, thrust::raw_pointer_cast(d_baseline_fft.data()), baseline2);
+  cufftExecZ2D(planZ2D,V3, baseline2);
   thrust::device_vector<double> d_baseline(&baseline2[0],&baseline2[Length*NBatch]); 
   //CalcPowerEnvAndPhase******************************
   thrust::device_vector<double> d_psd(NBatch*m); 
