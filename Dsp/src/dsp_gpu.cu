@@ -927,7 +927,7 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
 }
 
 //****************************************************************************8
-/*
+
 void FindFidRange(double start_amplitude_,double edge_ignore_,double Length, double NBatch,std::vector<double>& max_amp_,std::vector<double>&filtered_wf_,std::vector<double>&tm_,std::vector<double>&i_wf_,std::vector<double>&f_wf_,std::vector<double>&health_)
 {
   // Find the starting and ending points
@@ -955,10 +955,10 @@ void FindFidRange(double start_amplitude_,double edge_ignore_,double Length, dou
       if ((it_i != std::next(wfptr,Length-1)) && (it_i + 1 != std::next(wfptr,Length-1))) {
 
 	// Check if the next point is also over threshold.
-	checks_out = std::abs(*(it_i + 1)) > thresh;
+	checks_out = std::abs(*(it_i + 1)) > thresh[i];
 
 	// Increase the comparison starting point.
-	it_1 = it_i + 1;
+	it_i = it_i + 1;
 
 	// Turn the iterator into an index
 	if (checks_out) {
@@ -973,7 +973,7 @@ void FindFidRange(double start_amplitude_,double edge_ignore_,double Length, dou
       }
     }
     // Find the next element with magnitude lower than thresh
-    auto it_2 = std::find_if(std::next(wfptr,i_wf_-1), std::next(wfptr,Length-1),
+    auto it_2 = std::find_if(std::next(wfptr,i_wf_[i]-1), std::next(wfptr,Length-1),
 	[thresh](double x) {
 	return std::abs(x) < 0.8 * thresh[i];
 	});
@@ -984,7 +984,7 @@ void FindFidRange(double start_amplitude_,double edge_ignore_,double Length, dou
 
     } else {
 
-      f_wf_ = Length;
+      f_wf_[i] = Length;
       checks_out = true;
     }
 
@@ -993,20 +993,20 @@ void FindFidRange(double start_amplitude_,double edge_ignore_,double Length, dou
       // Find the range around a peak.
       it_i = std::find_if(it_2, std::next(wfptr,Length-1),
 	  [thresh](double x) {
-	  return std::abs(x) > 0.8 * thresh;
+	  return std::abs(x) > 0.8 * thresh[i];
 	  });
 
       auto it_f = std::find_if(it_i + 1, std::next(wfptr,Length-1),
 	  [thresh](double x) {
-	  return std::abs(x) < 0.8 * thresh;
+	  return std::abs(x) < 0.8 * thresh[i];
 	  });
 
       // Now check if the peak actually made it over threshold.
       if ((it_i != std::next(wfptr,Length-1)) && (it_f != std::next(wfptr,Length-1))) {
 
-	mm = std::minmax_element(it_i, it_f);
+	mm[i] = std::minmax_element(it_i, it_f);
 
-	if ((*mm.first < -thresh[j]) || (*mm.second > thresh[j])) {
+	if ((*mm[i].first < -thresh[j]) || (*mm[i].second > thresh[j])) {
 
 	  it_2 = it_f;
 
@@ -1022,7 +1022,7 @@ void FindFidRange(double start_amplitude_,double edge_ignore_,double Length, dou
 
       } else {
 
-	f_wf_[j] = std::distance(wfptr, std::next(wfptr,Length-1)));
+	f_wf_[j] = std::distance(wfptr, std::next(wfptr,Length-1));
 	break;
       }
     }
@@ -1043,7 +1043,7 @@ void FindFidRange(double start_amplitude_,double edge_ignore_,double Length, dou
   }
   wfptr=std::next(wfptr,Length);
 }
-*/
+
 
 struct im_harmonic
 {
