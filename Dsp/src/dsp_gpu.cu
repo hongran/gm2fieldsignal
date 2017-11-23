@@ -1310,7 +1310,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   }
 
   //FindFidRange***************************************************************
-  FindFidRange(start_amplitude,edge_ignore,Length, NBatch,&max_amp,&filtered_wf,&tm,&iwf,&fwf_,&health);
+  FindFidRange(start_amplitude,edge_ignore,Length, NBatch,&max_amp,&filtered_wf,&tm,&iwf,&fwf,&health);
 
   //CalcNoise*******************************************************
   //maybe we have use these parameters before
@@ -1318,8 +1318,8 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   int end=edge_width/(tm[1]-tm[0])+start;
   //stdev-------GPUversion
   //mean of each vector
-  static thrust:device_vector<double> mean1(NBatch);
-  static thrust:device_vector<double> mean2(NBatch);
+  thrust::device_vector<double> mean1(NBatch);
+  thrust::device_vector<double> mean2(NBatch);
   //!!!!!!!!!!!!!!Something weird with the label here
   for(unsigned int i=0; i<NBatch;i++)
   {
@@ -1340,18 +1340,18 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //}
   //}
   //noise of each vector
-  static thrust:device_vector<double> head(NBatch);
-  static thrust:device_vector<double> tail(NBatch);
+  thrust::device_vector<double> head(NBatch);
+  thrust::device_vector<double> tail(NBatch);
   for(unsigned int i=0;i<NBatch;i++)
   {
-    head[i]=thrust::transform_reduce(d_filtered_wf.begin+i*(Length)+start,d_filtered_wf.begin+i*(Length)+end,varianceshiftop(mean[i]),0.0,thrust::plus<double>());
+    head[i]=thrust::transform_reduce(d_filtered_wf.begin+i*(Length)+start,d_filtered_wf.begin+i*(Length)+end,varianceshiftop(mean1[i]),0.0,thrust::plus<double>());
   }
   for(unsigned int i=0;i<NBatch;i++)
   {
-    tail[i]=thrust::transform_reduce(d_filtered_wf.begin+i*(Length)+start,d_filtered_wf.begin+i*(Length)+(end),varianceshiftop(mean[i]),0.0,thrust::plus<double>());
+    tail[i]=thrust::transform_reduce(d_filtered_wf.begin+i*(Length)+start,d_filtered_wf.begin+i*(Length)+(end),varianceshiftop(mean2[i]),0.0,thrust::plus<double>());
   }
   //final result of each vector
-  //static thrust:device_vector<double> d_noise(NBatch);
+  thrust::device_vector<double> d_noise(NBatch);
   //structure of compare
   //struct compare
   //{ 
@@ -1368,7 +1368,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //}
   //}
   //}
-  thrust::transforms(head.begin(),head.end(),tail.begin(),d_noise.begin(),compare());
+  thrust::transform(head.begin(),head.end(),tail.begin(),d_noise.begin(),compare());
   //structure of Sqrt
   //struct Sqrt
   //{ 
@@ -1380,8 +1380,8 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   thrust::transform(d_noise.begin(),d_noise.end(),d_noise.begin(),Sqrt());
   //max_idx_fft and i_fft , f_fft 
   //this is in host
-  unsigned int fft_peak_index_width = static_cast<int>(fft_peak_wdth/interval);
-  for(j=0;j<NBatch;j++)
+  unsigned int fft_peak_index_width = static_cast<int>(fft_peak_width/interval);
+  for(unsigned int j=0;j<NBatch;j++)
   {
     max_idx_fft[j]=std::distance(d_psd.begin+j*Length,std::max_element(d_psd.begin+j*Length+1,d_psd.begin+(j+1)*Length)-1);
     if(max_idx_fft[j]<fft_peak_index_width) i_fft[j]=1;

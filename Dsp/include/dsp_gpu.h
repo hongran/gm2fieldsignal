@@ -295,7 +295,7 @@ class IntegratedProcessor{
     double start_amplitude;
     double kTau;
     //not sure about this
-    double fft_peak_index_width;
+    double fft_peak_width;
 
     //FFT plans
 
