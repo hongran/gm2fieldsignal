@@ -1093,8 +1093,32 @@ struct Sqrt
     return sqrt(x);
   }
 };
+//structure of complex norm
+struct my_complex_norm {
+  __host__ __device__
+  double operator()(thrust::complex<double> &d){
+    return thrust::norm(d);
+  }
+};
 
-
+//structure of absolute_value
+template<typename T>
+struct absolute_value : public unary_function<T,T>
+{
+  __host__ __device__ T operator()(const T &x) const
+  {
+    return x < T(0) ? -x : x;
+  }
+};
+/*
+struct absolute_value
+{
+  __host__ __device__ double operator()(const double &x) const
+  {
+    return x < double(0) ? -x : x;
+  }
+};
+*/
 //IntegratedProcessor Functions
 IntegratedProcessor::IntegratedProcessor(unsigned int len, unsigned int BatchNum):
   Length(len),NBatch(BatchNum)
@@ -1238,7 +1262,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //CalcPowerEnvAndPhase******************************
   thrust::device_vector<double> d_psd(NBatch*m); 
   //
-  thrust::transform(d_fid_fft.begin(),d_fid_fft.end(),d_psd.begin(),thrust::norm<thrust::complex<double>>());
+  thrust::transform(d_fid_fft.begin(),d_fid_fft.end(),d_psd.begin(),my_complex_norm());
   //phase**********************************************
   thrust::device_vector<double> d_phase(NBatch*Length);
   // Calculate the modulo-ed phase
@@ -1306,7 +1330,8 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //!!!!!!!!!!!!Something weird with the label here
   for(unsigned int i=0; i<NBatch; i++)
   {
-    d_MaxAmp[i]=thrust::transform(d_filtered_wf.begin()+i*(Length),d_filtered_wf.begin()+(i+1)*Length-1,absolute_value<double>(),0,thrust::maximum<double>());
+d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin(),d_filtered_wf.end(),absolute_value<double>(),0,thrust::maximum<double>());
+//    d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin()+i*(Length),d_filtered_wf.begin()+(i+1)*Length-1,absolute_value<double>(),0,thrust::maximum<double>());
   }
 
   //FindFidRange***************************************************************
@@ -1323,11 +1348,11 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //!!!!!!!!!!!!!!Something weird with the label here
   for(unsigned int i=0; i<NBatch;i++)
   {
-    mean1[i]=thrust::reduce(d_filtered_wf.begin()+i*(Length)+start,d_filtered_wf.begin+i*(Length)+end,0)/Length;
+    mean1[i]=thrust::reduce(d_filtered_wf.begin()+i*(Length)+start,d_filtered_wf.begin()+i*(Length)+end,0)/Length;
   }
   for(unsigned int i=0; i<NBatch;i++)
   {
-    mean2[i]=thrust::reduce(d_filtered_wf.rbegin()+i*Length+start,d_filtered_wf.rbegin+i*Length+end,0)/Length;
+    mean2[i]=thrust::reduce(d_filtered_wf.rbegin()+i*Length+start,d_filtered_wf.rbegin()+i*Length+end,0)/Length;
   }
   //structure of shift and square
   //struct varianceshiftop
@@ -1344,11 +1369,11 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   thrust::device_vector<double> tail(NBatch);
   for(unsigned int i=0;i<NBatch;i++)
   {
-    head[i]=thrust::transform_reduce(d_filtered_wf.begin+i*(Length)+start,d_filtered_wf.begin+i*(Length)+end,varianceshiftop(mean1[i]),0.0,thrust::plus<double>());
+    head[i]=thrust::transform_reduce(d_filtered_wf.begin()+i*(Length)+start,d_filtered_wf.begin()+i*(Length)+end,varianceshiftop(mean1[i]),0.0,thrust::plus<double>());
   }
   for(unsigned int i=0;i<NBatch;i++)
   {
-    tail[i]=thrust::transform_reduce(d_filtered_wf.begin+i*(Length)+start,d_filtered_wf.begin+i*(Length)+(end),varianceshiftop(mean2[i]),0.0,thrust::plus<double>());
+    tail[i]=thrust::transform_reduce(d_filtered_wf.begin()+i*(Length)+start,d_filtered_wf.begin()+i*(Length)+(end),varianceshiftop(mean2[i]),0.0,thrust::plus<double>());
   }
   //final result of each vector
   thrust::device_vector<double> d_noise(NBatch);
@@ -1383,7 +1408,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   unsigned int fft_peak_index_width = static_cast<int>(fft_peak_width/interval);
   for(unsigned int j=0;j<NBatch;j++)
   {
-    max_idx_fft[j]=std::distance(d_psd.begin+j*Length,std::max_element(d_psd.begin+j*Length+1,d_psd.begin+(j+1)*Length)-1);
+    max_idx_fft[j]=std::distance(d_psd.begin()+j*Length,std::max_element(d_psd.begin()+j*Length+1,d_psd.begin()+(j+1)*Length)-1);
     if(max_idx_fft[j]<fft_peak_index_width) i_fft[j]=1;
     else i_fft[j]=max_idx_fft[j]-fft_peak_index_width;
     f_fft[j]=max_idx_fft[j]+fft_peak_index_width;
