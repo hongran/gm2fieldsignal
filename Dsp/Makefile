@@ -71,7 +71,7 @@ obj/%.o: src/%.cxx $(HEADERS)
 
 ifdef CUDA_HOME
 obj/%.o: src/%.cu $(HEADERS)
-	$(NVCC)  $(GPU_FLAGS) $(GENCODE) -o $@ -c $<
+	$(NVCC) $(GPU_FLAGS) $(GENCODE) -o $@ -c $<
 
 lib/$(GPU_LIBNAME): $(GPU_OBJECTS)
 	$(CXX) -shared -fPIC $+ -o $@ $(GPU_LIBS)

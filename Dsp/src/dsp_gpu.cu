@@ -931,7 +931,7 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
 void FindFidRange(double start_amplitude_,double edge_ignore_,double Length, double NBatch,std::vector<double>& max_amp_,std::vector<double>&filtered_wf_,std::vector<double>&tm_,std::vector<double>&i_wf_,std::vector<double>&f_wf_,std::vector<double>&health_)
 {
   // Find the starting and ending points
-  bool checks_out;
+/*  bool checks_out;
   std::vector<double> thresh;
   std::transform(max_amp_.begin(),max_amp_.end(),thresh.begin(),std::bind1st(std::multiplies<double>(),start_amplitude_));
   int IgnoreRange = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
@@ -1042,6 +1042,7 @@ void FindFidRange(double start_amplitude_,double edge_ignore_,double Length, dou
     }
   }
   wfptr=std::next(wfptr,Length);
+  */
 }
 
 
@@ -1103,7 +1104,7 @@ struct my_complex_norm {
 
 //structure of absolute_value
 template<typename T>
-struct absolute_value : public unary_function<T,T>
+struct absolute_value : public thrust::unary_function<T,T>
 {
   __host__ __device__ T operator()(const T &x) const
   {
@@ -1151,7 +1152,7 @@ void IntegratedProcessor::AnaSwith(bool sw)
 
 int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector<double>& tm, std::vector<double>& freq,
     std::vector<double>& fwf, std::vector<double>& iwf, std::vector<double>& baseline,
-    std::vector<double>& psd, std::vector<double>& phi , std::vector& phase, std::vector<double>& env,
+    std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,
     std::vector<double> max_idx_fft,std::vector<double>& i_fft,std::vector<double>& f_fft, 
     std::vector<double> max_amp,std::vector<double>& health,std::vector<double>& filtered_wf)
 {
@@ -1178,23 +1179,25 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //constant
   double Nroot=std::sqrt(Length);
   //CUDA FFT
+  //load waveform to device
+
+//  const cufftDoubleReal *h_data=reinterpret_cast<const cufftDoubleReal *>(&wf[0]);
+  thrust::device_vector<double> d_fid(wf);
   //Initialize the result vector
-  cufftDoubleReal *d_data;
-  cufftDoubleComplex *d_data_res;
-  const cufftDoubleReal *h_data=reinterpret_cast<const cufftDoubleReal *>(&wf[0]);
+  thrust::device_vector<thrust::complex<double>> d_fid_fft(m*NBatch);
+  cufftDoubleReal *d_data = (cufftDoubleReal*)thrust::raw_pointer_cast(d_fid.data());
+  cufftDoubleComplex *d_data_res = (cuDoubleComplex*)thrust::raw_pointer_cast(d_fid_fft.data());
   //Allocate memory
-  cudaMalloc((void **)&d_data, sizeof(cufftDoubleReal)*Length*NBatch);
-  cudaMalloc((void **)&d_data_res, sizeof(cufftDoubleComplex)*m*NBatch);
+//  cudaMalloc((void **)&d_data, sizeof(cufftDoubleReal)*Length*NBatch);
+//  cudaMalloc((void **)&d_data_res, sizeof(cufftDoubleComplex)*m*NBatch);
   //Copy data
-  cudaMemcpy(d_data, h_data, sizeof(cufftDoubleReal)*Length*NBatch, cudaMemcpyHostToDevice);
+//  cudaMemcpy(d_data, h_data, sizeof(cufftDoubleReal)*Length*NBatch, cudaMemcpyHostToDevice);
   //Execute
   cufftExecD2Z(planD2Z, d_data, d_data_res);
   //Renormalize!! Maybe we could change the parameter!
   dim3 DimBlock (16); 
   dim3 DimGrid (m*NBatch/16+1);
   ComplexScale<<<DimGrid, DimBlock>>>(1/Nroot, d_data_res, m*NBatch);
-  //create vector
-  thrust::device_vector<thrust::complex<double>> d_fid_fft(&d_data_res[0],&d_data_res[m*NBatch]);
   //window_filter*******************************************
   //We could use thrust copy if necessary
   auto interval=freq[1]-freq[0];
@@ -1267,20 +1270,20 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   thrust::device_vector<double> d_phase(NBatch*Length);
   // Calculate the modulo-ed phase
   thrust::transform(d_wf_im.begin(), d_wf_im.end(), d_filtered_wf.begin(),d_phase.begin(),ATan2());
-  thrust::copy(d_phase.begin(),d_phase.end(),phase.begin());
+  thrust::copy(d_phase.begin(),d_phase.end(),phi.begin());
   // Now unwrap the phase
   double thresh = 0.5 * kTau;
   double u = 0.0;
   bool gave_warning = false;
   int k = 0; // to track the winding number
   //check
-  for (auto it = phase.begin() + 1; it != phase.end(); ++it) {
+  for (auto it = phi.begin() + 1; it != phi.end(); ++it) {
 
     // Add current total
     *it += k * kTau;
     u = *(it) - *(it - 1);
     //Don't check at the end of each signal
-    int distance=thrust::distance(phase.begin(),it);
+    int distance=thrust::distance(phi.begin(),it);
     if(distance!=1 && (distance%Length)==1)
     {
       continue;
@@ -1335,7 +1338,7 @@ d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin(),d_filtered_wf.end(),a
   }
 
   //FindFidRange***************************************************************
-  FindFidRange(start_amplitude,edge_ignore,Length, NBatch,&max_amp,&filtered_wf,&tm,&iwf,&fwf,&health);
+  //FindFidRange(start_amplitude,edge_ignore,Length, NBatch,&max_amp,&filtered_wf,&tm,&iwf,&fwf,&health);
 
   //CalcNoise*******************************************************
   //maybe we have use these parameters before
