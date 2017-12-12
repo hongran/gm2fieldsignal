@@ -1337,13 +1337,47 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //!!!!!!!!!!!!Something weird with the label here
   for(unsigned int i=0; i<NBatch; i++)
   {
-d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin(),d_filtered_wf.end(),absolute_value<double>(),0,thrust::maximum<double>());
-//    d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin()+i*(Length),d_filtered_wf.begin()+(i+1)*Length-1,absolute_value<double>(),0,thrust::maximum<double>());
+  d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin(),d_filtered_wf.end(),absolute_value<double>(),0,thrust::maximum<double>());
+  
+  //    d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin()+i*(Length),d_filtered_wf.begin()+(i+1)*Length-1,absolute_value<double>(),0,thrust::maximum<double>());
   }
   thrust::copy(d_MaxAmp.begin(),d_MaxAmp.end(),max_amp.begin());
   //FindFidRange***************************************************************
   //FindFidRange(start_amplitude,edge_ignore,Length, NBatch,&max_amp,&filtered_wf,&tm,&iwf,&fwf,&health);
-
+  //We need to define start_amplitude
+  for(unsigned int i=0;i<NBatch;i++)
+  {
+  for(unsigned int j=0;j<Length;j++)
+  { 
+  if(filtered_wf[i*Length+j]==max_amp[i]) 
+  {
+  iwf[i]=j;
+  break;
+  }  
+  else
+  {
+  ;
+  }
+  }
+  }
+  double start_amplitude;
+  std::vector<double> threshold;
+  std::transform(max_amp.begin(),max_amp.end(),threshold.begin(),std::bind1st(std::multiplies<double>(),start_amplitude));
+  for(unsigned int i=0;i<NBatch;i++)
+  {
+  for(unsigned int j=Length;j>0;j--)
+  {
+  if(filtered_wf[i*Length+j]<threshold[i])
+  {
+  fwf[i]=j;
+  break;
+  }
+  else
+  {
+  ;
+  }
+  }
+  }
   //CalcNoise*******************************************************
   //maybe we have use these parameters before
   int start=edge_ignore/(tm[1]-tm[0]);
