@@ -1227,6 +1227,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   cufftExecZ2D(planZ2D,V1, filtered_wf2);
   //save in vector d_filtered_wf
   thrust::device_vector<double> d_filtered_wf(&filtered_wf2[0],&filtered_wf2[Length*NBatch]);
+  thrust::copy(d_filtered_wf.begin(),d_filtered_wf.end(),filtered_wf.begin());
   //imaginary harmonic complement***************************
   thrust::transform(d_fid_fft_filtered.begin(),d_fid_fft_filtered.end(),d_fid_fft_filtered.begin(),im_harmonic());
   //irfft***************************************************
@@ -1266,6 +1267,8 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   thrust::device_vector<double> d_psd(NBatch*m); 
   //
   thrust::transform(d_fid_fft.begin(),d_fid_fft.end(),d_psd.begin(),my_complex_norm());
+  //copy to host
+  thrust::copy(d_psd.begin(),d_psd.end(),psd.begin());
   //phase**********************************************
   thrust::device_vector<double> d_phase(NBatch*Length);
   // Calculate the modulo-ed phase
@@ -1323,10 +1326,11 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   thrust::device_vector<double> d_env(NBatch*Length);
 
   thrust::transform(d_filtered_wf.begin(), d_filtered_wf.end(), d_wf_im.begin(), d_env.begin(),AddSquare());
+  thrust::copy(d_env.begin(),d_env.end(),env.begin());
   //BaselineCorrection
   //!!!!!!!!!Here I use filtered_wf to minux baseline
-  thrust::device_vector<double> d_wf_nobaseline(NBatch*Length);
-  thrust::transform(d_filtered_wf.begin(),d_filtered_wf.end(),d_baseline.begin(),d_wf_nobaseline.begin(),thrust::minus<double>());
+  // thrust::device_vector<double> d_wf_nobaseline(NBatch*Length);
+  // thrust::transform(d_filtered_wf.begin(),d_filtered_wf.end(),d_baseline.begin(),d_wf_nobaseline.begin(),thrust::minus<double>());
     //CalcMaxAmp*****************************************************
     //initialize MaxAmp vector
     thrust::device_vector<double> d_MaxAmp(NBatch);
@@ -1336,7 +1340,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
 d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin(),d_filtered_wf.end(),absolute_value<double>(),0,thrust::maximum<double>());
 //    d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin()+i*(Length),d_filtered_wf.begin()+(i+1)*Length-1,absolute_value<double>(),0,thrust::maximum<double>());
   }
-
+  thrust::copy(d_MaxAmp.begin(),d_MaxAmp.end(),max_amp.begin());
   //FindFidRange***************************************************************
   //FindFidRange(start_amplitude,edge_ignore,Length, NBatch,&max_amp,&filtered_wf,&tm,&iwf,&fwf,&health);
 
