@@ -1378,6 +1378,17 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   }
   }
   }
+  for(unsigned int i=0; i<NBatch; i++)
+  {
+  if(iwf[i]>Length*0.95||iwf[i]>=fwf[i])
+  {
+  health[i]=0.0;
+  }
+  else
+  {
+  ;
+  }
+  }
   //CalcNoise*******************************************************
   //maybe we have use these parameters before
   int start=edge_ignore/(tm[1]-tm[0]);
