@@ -26,7 +26,8 @@ notes:
 
 //--- project includes ------------------------------------------------------//
 //#include "params.h"
-#include "dsp.h"
+//#include "dsp.h"
+#include "dsp_gpu.h"
 
 namespace fid {
 
@@ -47,7 +48,7 @@ class Fid {
  public:
 
   // Default ctors/dtors.
-  Fid();
+  Fid(unsigned int tNBatch=1, unsigned int tSize=0);
   Fid(const std::vector<double>& wf, const std::vector<double>& tm);
   Fid(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize);
   Fid(const std::vector<double>& wf);
@@ -55,7 +56,7 @@ class Fid {
   void Init(std::string Option = std::string("Standard"));
 
   //Waveform set function
-  SetWf(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize);
+  void SetWf(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize);
   
   // Simplified frequency extraction
   double GetFreq(const std::string& method_name, unsigned int Index = 0);
@@ -88,9 +89,9 @@ class Fid {
   const double amp(unsigned int Index=0) const { return max_amp_[Index]; };
   const bool isgood(unsigned int Index=0) const { return health_[Index] > 0.0; };
   const ushort health(unsigned int Index=0) const { return health_[Index]; };
-  const int freq_method(unsigned int Index=0) const { return freq_method_[Index]; };
+  const int freq_method() const { return freq_method_; };
   const double fid_time(unsigned int Index=0) const { return tm_[Index*fid_size+f_wf_[Index]] - tm_[Index*fid_size+i_wf_[Index]]; };
-  const double act_length_(unsigned int Index=0) const { return act_length_[Index]; };
+  const double act_length(unsigned int Index=0) const { return act_length_[Index]; };
 
   const unsigned int& i_wf(unsigned int Index=0) { return i_wf_[Index]; };
   const unsigned int& f_wf(unsigned int Index=0) { return f_wf_[Index]; };
@@ -109,15 +110,15 @@ class Fid {
   void SetBaseline(const std::vector<double>& bl);
 
   // Frequency Extraction Methods
-  double CalcZeroCountFreq();
-  double CalcCentroidFreq();
-  double CalcAnalyticalFreq();
-  double CalcLorentzianFreq();
-  double CalcSoftLorentzianFreq();
-  double CalcExponentialFreq();
-  double CalcPhaseFreq();
-  double CalcPhaseDerivFreq(int poln=3);
-  double CalcSinusoidFreq();
+  void CalcZeroCountFreq();
+  void CalcCentroidFreq();
+  void CalcAnalyticalFreq();
+  void CalcLorentzianFreq();
+  void CalcSoftLorentzianFreq();
+  void CalcExponentialFreq();
+  void CalcPhaseFreq();
+  void CalcPhaseDerivFreq(int poln=3);
+  void CalcSinusoidFreq();
 
   void CalcNoise();
   void CalcMaxAmp();      
@@ -149,7 +150,7 @@ class Fid {
   std::vector<double> snr_;
   std::vector<double> max_amp_;
   std::vector<double> act_length_; //Fid active length, when max amp decays to its 1/e
-  std::vector<ushort> health_; // percentage between 0 and 100.
+  std::vector<unsigned short> health_; // percentage between 0 and 100.
 
 //  double freq_;
 //  double freq_err_;
@@ -173,7 +174,7 @@ class Fid {
   Method freq_method_ = PH;
 
   // For fits.
-  std::vector<double> guess_;
+//  std::vector<double> guess_;
   std::vector<TF1> f_fit_;  
   std::vector<TGraph> gr_time_series_;
   std::vector<TGraph> gr_freq_series_;
@@ -194,6 +195,9 @@ class Fid {
   std::vector<double> fftfreq_; // fft frequency stamp
   std::vector<double> res_; //residual of fit
 //  std::vector<double> temp_; // for random transformations
+
+  //Integrated Processor Class
+  dsp::IntegratedProcessor theIntegratedProcessor;
 
   // Private Member Functions  
   // init function to be called after wf_ and tm_ are set.

@@ -3,32 +3,24 @@
 
 namespace fid {
 
-Fid::Fid()
+Fid::Fid(unsigned int tNBatch, unsigned int tSize):theIntegratedProcessor(tNBatch,tSize)
 {
-  NBatch = 0;
-  fid_size = 0;
+  NBatch = tNBatch;
+  fid_size = tSize;
   FFTDone = false;
-  for (int i=0 ; i<8 ; i++){
-    freq_array_[i] = 0;
-    freq_err_array_[i] = 0;
-  }
 }
 
-Fid::Fid(const std::vector<double>& wf, const std::vector<double>& tm)
+Fid::Fid(const std::vector<double>& wf, const std::vector<double>& tm):theIntegratedProcessor(1,wf.size())
 {
   NBatch = 1;
   fid_size = wf.size();
   FFTDone = false;
-  for (int i=0 ; i<8 ; i++){
-    freq_array_[i] = 0;
-    freq_err_array_[i] = 0;
-  }
   // Copy the waveform and time to member vectors.
   wf_ = wf;
   tm_ = tm;
 }
 
-Fid::Fid(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize)
+Fid::Fid(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize):theIntegratedProcessor(tNBatch,tSize)
 {
   NBatch = tNBatch;
   fid_size = tSize;;
@@ -36,21 +28,27 @@ Fid::Fid(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigne
   if(wf.size() != NBatch*fid_size){
     std::cout << "Warning: waveform vector size does not match the given arguments."<<std::endl;
   }
-  for (int i=0 ; i<8 ; i++){
-    freq_array_[i] = 0;
-    freq_err_array_[i] = 0;
-  }
   // Copy the waveform and time to member vectors.
   wf_ = wf;
   tm_.resize(wf_.size());
-  for (unsigned int i;i<NBatch;i++){
-    for (unsigned int j;j<fid_size;j++){
+  for (unsigned int i=0;i<NBatch;i++){
+    for (unsigned int j=0;j<fid_size;j++){
       tm_[i*fid_size+j] = j*dt;
     }
   }
 }
 
-Fid::SetWf(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize)
+Fid::Fid(const std::vector<double>& wf):theIntegratedProcessor(1,wf.size())
+{
+  NBatch = 1;
+  fid_size = wf.size();
+  FFTDone = false;
+  // Copy the waveform and construct a generic time range.
+  wf_ = wf;
+  tm_ = dsp::construct_range(0.0, (double)wf_.size(), 1.0);
+}
+
+void Fid::SetWf(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize)
 {
   //Clear the existing wf
   wf_.clear();
@@ -65,38 +63,23 @@ Fid::SetWf(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsig
   fftfreq_.clear(); // fft frequency stamp
   res_.clear(); //residual of fit
   //Renew parameters
+  if ((tNBatch != NBatch) && (tSize != fid_size) ){
+    theIntegratedProcessor = dsp::IntegratedProcessor(tNBatch,tSize);
+  }
   NBatch = tNBatch;
   fid_size = tSize;;
   FFTDone = false;
   if(wf.size() != NBatch*fid_size){
     std::cout << "Warning: waveform vector size does not match the given arguments."<<std::endl;
   }
-  for (int i=0 ; i<8 ; i++){
-    freq_array_[i] = 0;
-    freq_err_array_[i] = 0;
-  }
   // Copy the waveform and time to member vectors.
   wf_ = wf;
   tm_.resize(wf_.size());
-  for (unsigned int i;i<NBatch;i++){
-    for (unsigned int j;j<fid_size;j++){
+  for (unsigned int i=0;i<NBatch;i++){
+    for (unsigned int j=0;j<fid_size;j++){
       tm_[i*fid_size+j] = j*dt;
     }
   }
-}
-
-Fid::Fid(const std::vector<double>& wf)
-{
-  NBatch = 1;
-  fid_size = wf.size();
-  FFTDone = false;
-  for (int i=0 ; i<8 ; i++){
-    freq_array_[i] = 0;
-    freq_err_array_[i] = 0;
-  }
-  // Copy the waveform and construct a generic time range.
-  wf_ = wf;
-  tm_ = dsp::construct_range(0.0, (double)wf_.size(), 1.0);
 }
 
 void Fid::SetParameter(const std::string& Name, double Value)
@@ -127,7 +110,7 @@ void Fid::SetParameter(const std::string& Name, double Value)
 }
 
 void Fid::SetNoise(double NoiseValue){
-  noise_ = NoiseValue; 
+  noise_ = std::vector<double>(NBatch,NoiseValue); 
 }
 
 void Fid::SetBaseline(const std::vector<double>& bl){
@@ -141,11 +124,34 @@ void Fid::Init(std::string Option)
   TF1::DefaultAddToGlobalList(false);
 #endif
 
-  // Initialize the health properly.
-  health_ = 100.0;
+  //Initialize data members
+
+  i_wf_ = std::vector<unsigned int>(NBatch,0) ; 
+  f_wf_ = std::vector<unsigned int>(NBatch,0);
+  i_fft_ = std::vector<unsigned int>(NBatch,0);
+  f_fft_ = std::vector<unsigned int>(NBatch,0);
+  max_idx_fft_ = std::vector<unsigned int>(NBatch,0);
+
+  // Waveform characteristics
+  mean_ = std::vector<double>(NBatch,-1);
+  noise_ = std::vector<double>(NBatch,-1);
+  snr_ = std::vector<double>(NBatch,-1);
+  max_amp_ = std::vector<double>(NBatch,-1);
+  act_length_ = std::vector<double>(NBatch,-1); 
+  health_ = std::vector<unsigned short>(NBatch,100); 
+
+  freq_array_ = std::vector<std::vector<double>>(NBatch,std::vector<double>(8,-1));
+  freq_err_array_ = std::vector<std::vector<double>>(NBatch,std::vector<double>(8,-1));
+  chi2_ = std::vector<double>(NBatch,-1); 
+
+  // For fits.
+//  std::vector<double> guess_;
+  f_fit_ = std::vector<TF1>(NBatch);  
+  gr_time_series_ = std::vector<TGraph>(NBatch);
+  gr_freq_series_ = std::vector<TGraph>(NBatch);
 
   if (Option.compare("Speed")==0){
-  //Test Time cost
+/*  //Test Time cost
   auto t0 = std::chrono::high_resolution_clock::now();
     // Initialize the Fid for analysis
     CenterFid();
@@ -168,8 +174,16 @@ void Fid::Init(std::string Option)
 //  std::cout << "Freq = "<<freq_array_[ZC]<<std::endl;
 //  std::cout << "EdgeWidth = "<<edge_width_<<std::endl;
   //std::cout << "Range = "<<tm_[i_wf_] <<" "<<tm_[f_wf_]<<std::endl;
+  */
+    ;
   }else if (Option.compare("Standard")==0){
-    CallFFT();
+    theIntegratedProcessor.Process(wf_,tm_,fftfreq_,
+	filtered_wf_, wf_im_ ,baseline_,
+	psd_, phi_ , env_,
+	i_wf_,f_wf_, max_idx_fft_,i_fft_,f_fft_, 
+	max_amp_,health_);
+    std::cout <<"AAAAAAAAAA"<<std::endl;
+    /*CallFFT();
     CalcPowerEnvAndPhase();
     BaselineCorrection();
     CalcMaxAmp();
@@ -183,12 +197,16 @@ void Fid::Init(std::string Option)
     }
 
     freq_method_ = PH;
-    CalcFreq();
+    CalcFreq();*/
+    ;
   }else if (Option.compare("FFTOnly")==0){
-    CallFFT();
+    /*CallFFT();
     CalcPowerEnvAndPhase();
+    */
+    ;
   }else if (Option.compare("Old")==0){
-    CenterFid();
+    ;
+  /*  CenterFid();
     CalcNoise();
     CalcMaxAmp();
     if (noise_>0.0){
@@ -237,25 +255,28 @@ void Fid::Init(std::string Option)
     GuessFitParams();
 
     freq_method_ = PH;
-    CalcFreq();
+    CalcFreq();*/
   }
 
-  // Flag the FID as bad if it's negative.
-  if (freq_array_[freq_method_] <= 0.0) {
-    health_ = 0.0;
-  }
+  //Calculate health
+  for (unsigned int i=0;i<NBatch;i++){
+    // Flag the FID as bad if it's negative.
+    if (freq_array_[i][freq_method_] <= 0.0) {
+      health_[i] = 0;
+    }
 
-  // Else calculate a health based on signal to noise.
-  /*if (max_amp_ < noise_ * snr_thresh_) {
-    health_ *= max_amp_ / (noise_ * snr_thresh_);
-  }*/
-  if (snr_ < snr_thresh_) {
-    health_ *= (snr_ / snr_thresh_);
-  }
+    // Else calculate a health based on signal to noise.
+    /*if (max_amp_ < noise_ * snr_thresh_) {
+      health_ *= max_amp_ / (noise_ * snr_thresh_);
+      }*/
+    if (snr_[i] < snr_thresh_) {
+      health_[i] *= (snr_[i] / snr_thresh_);
+    }
 
-  // And factor fid duration into health.
-  if (f_wf_ - i_wf_ < wf_.size() * len_thresh_) {
-    health_ *= (f_wf_ - i_wf_) / (wf_.size() * len_thresh_);
+    // And factor fid duration into health.
+    if (f_wf_[i] - i_wf_[i] < fid_size * len_thresh_) {
+      health_[i] *= (f_wf_[i] - i_wf_[i]) / (fid_size * len_thresh_);
+    }
   }
 
 }
@@ -263,6 +284,8 @@ void Fid::Init(std::string Option)
 
 void Fid::CenterFid()
 {
+  ;
+  /*
   int w = static_cast<int>(edge_width_/(tm_[1]-tm_[0]));
   double sum  = std::accumulate(wf_.begin(), wf_.begin() + w, 0.0);
   double avg = sum / w; // to pass into lambda
@@ -270,6 +293,7 @@ void Fid::CenterFid()
   //std::cout <<"Baseline " << avg <<std::endl;
 
   std::for_each(wf_.begin(), wf_.end(), [avg](double& x){ x -= avg; });
+  */
 }
 
 void Fid::BaselineCorrection()
@@ -285,6 +309,8 @@ void Fid::ConstBaselineCorrection(double ConstBaseline){
 
 void Fid::CalcNoise()
 {
+  ;
+  /*
   // Grab a new handle to the noise window width for aesthetics.
   int i = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
   int f = static_cast<int>(edge_width_/(tm_[1]-tm_[0])) + i;
@@ -295,18 +321,23 @@ void Fid::CalcNoise()
 
   // Take the smaller of the two.
   noise_ = (tail < head) ? (tail) : (head);
+  */
 }
 
 double Fid::CalcRms()
 {
+  /*
   int ignore = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
 
   // Find the rms of the entire range, excluding the edge_ignore
   return dsp::stdev(wf_.begin() + ignore, wf_.end() - ignore);
+  */
+  return -1;
 }
 
 void Fid::CalcMaxAmp()
 {
+  /*
   //Waveform select
   std::vector<double>* wfptr;
   if (FFTDone){
@@ -324,11 +355,14 @@ void Fid::CalcMaxAmp()
 
     max_amp_ = std::abs(*mm.second);
   }
+  */
 }
 
 
 void Fid::FindFidRange()
 {
+  ;
+  /*
   // Find the starting and ending points
   double thresh = start_amplitude_ * max_amp_;
   bool checks_out = false;
@@ -443,38 +477,39 @@ void Fid::FindFidRange()
     i_wf_ = 0;
     f_wf_ = wfptr->size() * 0.01;
   }
+  */
 }
 
-double Fid::GetFreq(const std::string& method_name)
+double Fid::GetFreq(const std::string& method_name, unsigned int Index)
 {
-  return GetFreq(ParseMethod(method_name));
+  return GetFreq(ParseMethod(method_name),Index);
 }
 
-double Fid::GetFreq(const Method m)
+double Fid::GetFreq(const Method m, unsigned int Index)
 {
   // Recalculate if necessary
-  if (freq_array_[m]<=0) {
+  if (freq_array_[Index][m]<=0) {
     freq_method_ = m;
     CalcFreq();
   } 
 
-  return freq_array_[m];
+  return freq_array_[Index][m];
 }
 
-double Fid::GetFreqError(const std::string& method_name)
+double Fid::GetFreqError(const std::string& method_name, unsigned int Index)
 {
-  return GetFreqError(ParseMethod(method_name));
+  return GetFreqError(ParseMethod(method_name),Index);
 }
 
-double Fid::GetFreqError(const Method m)
+double Fid::GetFreqError(const Method m, unsigned int Index)
 {
   // Recalculate if necessary
-  if (freq_err_array_[m]<=0) {
+  if (freq_err_array_[Index][m]<=0) {
     freq_method_ = m;
     CalcFreq();
   } 
 
-  return freq_err_array_[m];
+  return freq_err_array_[Index][m];
 }
 
 // Calculate the frequency using the current Method
@@ -532,6 +567,8 @@ void Fid::CalcFreq()
 
 void Fid::CallFFT()
 {
+  ;
+  /*
   //Get Frequency vector
   CalcFftFreq();
   // Get the fft of the waveform first.
@@ -558,10 +595,13 @@ void Fid::CallFFT()
   baseline_ = dsp::irfft(baseline_fft, wf_.size() % 2 == 1);
 
   FFTDone = true;
+  */
 }
 
 void Fid::CalcPowerEnvAndPhase()
 {
+  ;
+  /*
   // Now we can get power, envelope and phase.
   psd_ = dsp::norm(fid_fft_);
   phi_ = dsp::phase(filtered_wf_, wf_im_);
@@ -580,16 +620,19 @@ void Fid::CalcPowerEnvAndPhase()
 
   f_fft_ = max_idx_fft_ + fft_peak_index_width;
   if (f_fft_ > psd_.size()) f_fft_ = psd_.size();
+  */
 }
 
 void Fid::CalcFftFreq()
 {
   // @todo: consider storing as start, step, stop
-  fftfreq_ = dsp::fftfreq(tm_);
+  //fftfreq_ = dsp::fftfreq(tm_);
+  ;
 }
 
 void Fid::GuessFitParams()
 {
+  /*
   // Guess the general fit parameters
   guess_.assign(6, 0.0);
 
@@ -647,12 +690,13 @@ void Fid::FreqFit(TF1& func)
   for (unsigned int i = i_fft_; i < f_fft_ + 1; ++i){
     res_.push_back(psd_[i] - func.Eval(fftfreq_[i]));
   }
-
+*/
   return;
 }
 
-double Fid::CalcZeroCountFreq()
+void Fid::CalcZeroCountFreq()
 {
+  /*
   std::vector<double> temp_;
   // set up vectors to hold relevant stuff about the important part
   temp_.resize(f_wf_ - i_wf_);
@@ -724,11 +768,13 @@ double Fid::CalcZeroCountFreq()
   // todo: Fix this into a better error estimate. 
   freq_err_array_[ZC] = freq_array_[ZC] * sqrt(2) * (tm_[1] - tm_[0]) / (tf - ti);
 
-  return freq_array_[ZC];
+  */
+  ;
 }
 
-double Fid::CalcCentroidFreq()
+void Fid::CalcCentroidFreq()
 {
+  /*
   // Find the peak power
   double thresh = *std::max_element(psd_.begin(), psd_.end());
   thresh *= centroid_thresh_;
@@ -757,12 +803,14 @@ double Fid::CalcCentroidFreq()
   freq_err_array_[CN] = sqrt(pwfreq2 / pwsum - pow(pwfreq / pwsum, 2.0));
   freq_array_[CN] = pwfreq / pwsum;
 
-  return freq_array_[CN];
+  */
+  ;
 }
 
 
-double Fid::CalcAnalyticalFreq()
+void Fid::CalcAnalyticalFreq()
 {
+  /*
   //Requires FFT
   if (!FFTDone)return 0;
   // Set the fit function:
@@ -789,7 +837,8 @@ double Fid::CalcAnalyticalFreq()
 
   freq_array_[AN] = f_fit_.GetParameter(0);
 
-  return freq_array_[AN];
+  */
+  ;
 }
 
 /*
@@ -814,8 +863,9 @@ double Fid::CalcLorentzianFreq()
   return freq_array_[LZ];
 }*/
 
-double Fid::CalcLorentzianFreq()
+void Fid::CalcLorentzianFreq()
 {
+  /*
   //Requires FFT
   if (!FFTDone)return 0;
   //Lorentzian function
@@ -844,11 +894,13 @@ double Fid::CalcLorentzianFreq()
   dsp::linear_fit(fftfreq_,psd_,i_fft_,f_fft_,3,parameter,res_);
   //change the parameter back
   freq_array_[LZ] = -parameter[1]*0.5/parameter[2];
-  return freq_array_[LZ];
+  */
+  ;
 }
 
-double Fid::CalcSoftLorentzianFreq()
+void Fid::CalcSoftLorentzianFreq()
 {
+  /*
   //Requires FFT
   if (!FFTDone)return 0;
   // Set the fit function
@@ -865,12 +917,14 @@ double Fid::CalcSoftLorentzianFreq()
 
   freq_array_[LZ] = f_fit_.GetParameter(0);
 
-  return freq_array_[LZ];
+  */
+  ;
 }
 
 
-double Fid::CalcExponentialFreq()
+void Fid::CalcExponentialFreq()
 {
+  /*
   //Requires FFT
   if (!FFTDone)return 0;
   // Set the fit function
@@ -886,13 +940,15 @@ double Fid::CalcExponentialFreq()
   FreqFit(f_fit_);
 
   freq_array_[EX] = f_fit_.GetParameter(0);
+  */
 
-  return freq_array_[EX];
+  ;
 }
 
 
-double Fid::CalcPhaseFreq()
+void Fid::CalcPhaseFreq()
 {
+  /*
   int poln = 1;
   //Requires FFT
   if (!FFTDone)return 0;
@@ -904,19 +960,13 @@ double Fid::CalcPhaseFreq()
   f_fit_ = TF1("f_fit_", fcn,tm_[i_wf_],tm_[f_wf_]);
 
   // Adjust to ignore the edges if possible.
-/*  int edge = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
-  if (f - i > 2 * edge) {
-    i += edge;
-    f -= edge;
-  }*/
+//  int edge = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
+//  if (f - i > 2 * edge) {
+//    i += edge;
+//    f -= edge;
+//  }
 
   // Do the fit.
-  //TEST linear fit
-  /*
-  std::vector<double> x= {0,1,2,3};
-  std::vector<double> y= {0,2,4,6};
-  dsp::linear_fit(x,y,0,4,2,ParList);
-  */
   std::vector<double> ParList(poln+1);
   dsp::linear_fit(tm_,phi_,i_wf_,f_wf_,poln+1,ParList,res_);
   for (int i=0;i<=poln;i++){
@@ -929,11 +979,13 @@ double Fid::CalcPhaseFreq()
 
 //  std::cout <<"Linear Fit Result: " << ParList[1]/dsp::kTau<<std::endl;
 
-  return freq_array_[PH];
+*/
+  ;
 }
 
-double Fid::CalcPhaseDerivFreq(int poln)
+void Fid::CalcPhaseDerivFreq(int poln)
 {
+  /*
   //Requires FFT
   if (!FFTDone)return 0;
 
@@ -957,12 +1009,13 @@ double Fid::CalcPhaseDerivFreq(int poln)
   // Find the initial phase by looking at the function's derivative
   freq_array_[PD] = f_fit_.Derivative(tm_[i_wf_]) / dsp::kTau;
 
-  return freq_array_[PD];
+  */
+  ;
 } 
 
-/*
-double Fid::CalcSinusoidFreq()
+void Fid::CalcSinusoidFreq()
 {
+/*
   //Requires FFT
   if (!FFTDone)return 0;
   std::vector<double> temp_;
@@ -1000,9 +1053,9 @@ double Fid::CalcSinusoidFreq()
   ireq_err_array_[SN] = f_fit_.GetParError(0) / dsp::kTau;
   chi2_ = f_fit_.GetChisquare();
 
-  return freq_array_[SN];
-}
 */
+  ;
+}
 
 Method Fid::ParseMethod(const std::string& m)
 {

@@ -1121,7 +1121,7 @@ struct absolute_value
 };
 */
 //IntegratedProcessor Functions
-IntegratedProcessor::IntegratedProcessor(unsigned int len, unsigned int BatchNum):
+IntegratedProcessor::IntegratedProcessor(unsigned int BatchNum, unsigned int len):
   Length(len),NBatch(BatchNum)
 {
     cufftPlan1d(&planD2Z, Length, CUFFT_D2Z, NBatch);
@@ -1151,13 +1151,16 @@ void IntegratedProcessor::AnaSwith(bool sw)
 }
 
 int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector<double>& tm, std::vector<double>& freq,
-    std::vector<double>& fwf, std::vector<double>& iwf, std::vector<double>& baseline,
-    std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,
-    std::vector<double> max_idx_fft,std::vector<double>& i_fft,std::vector<double>& f_fft, 
-    std::vector<double> max_amp,std::vector<double>& health,std::vector<double>& filtered_wf)
+	std::vector<double>& filtered_wf, std::vector<double>& wf_im, std::vector<double>& baseline,
+	std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,
+	std::vector<unsigned int>& iwf, std::vector<unsigned int>& fwf,
+	std::vector<unsigned int> max_idx_fft,std::vector<unsigned int>& i_fft,std::vector<unsigned int>& f_fft, 
+	std::vector<double> max_amp,std::vector<unsigned short>& health)
 {
   //CalcFftFreq*********************************************
   double dt=tm[1]-tm[0];
+  //Resize freq to the same dimension
+  freq.resize(tm.size());
   unsigned int m; // size of fft_freq
   // Handle both even and odd cases properly.
   if (Length % 2 == 0) {
@@ -1208,25 +1211,28 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //filter, revise
   for(unsigned int j=0; j<NBatch; j++)
   {
-    for(unsigned int i=0; i<i_start;i++)
+    thrust::fill(d_fid_fft_filtered.begin()+j*m,d_fid_fft_filtered.begin()+j*m+i_start,thrust::complex<double>(0.0,0.0));
+    /*for(unsigned int i=0; i<i_start;i++)
     {
       d_fid_fft_filtered[i+j*NBatch]=thrust::complex<double>(0.0,0.0);
-    }
-    for(unsigned int i=i_end+1; i<m;i++)
+    }*/
+    thrust::fill(d_fid_fft_filtered.begin()+j*m+i_end,d_fid_fft_filtered.begin()+(j+1)*m,thrust::complex<double>(0.0,0.0));
+    /*for(unsigned int i=i_end+1; i<m;i++)
     {
       d_fid_fft_filtered[i+j*NBatch]=thrust::complex<double>(0.0,0.0);
-    }
+    }*/
   }
   //irfft***************************************************
   //Instantiate the result vector
   cufftDoubleReal *filtered_wf2;
   //Allocate memory
   cudaMalloc((void **)&filtered_wf2, sizeof(cufftDoubleReal) * Length * NBatch);
-  cuDoubleComplex* V1 = (cuDoubleComplex*)thrust::raw_pointer_cast(d_fid_fft.data());
+  cuDoubleComplex* V1 = (cuDoubleComplex*)thrust::raw_pointer_cast(d_fid_fft_filtered.data());
   //Execute
   cufftExecZ2D(planZ2D,V1, filtered_wf2);
   //save in vector d_filtered_wf
   thrust::device_vector<double> d_filtered_wf(&filtered_wf2[0],&filtered_wf2[Length*NBatch]);
+  filtered_wf.resize(Length*NBatch);
   thrust::copy(d_filtered_wf.begin(),d_filtered_wf.end(),filtered_wf.begin());
   //imaginary harmonic complement***************************
   thrust::transform(d_fid_fft_filtered.begin(),d_fid_fft_filtered.end(),d_fid_fft_filtered.begin(),im_harmonic());
@@ -1235,24 +1241,28 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   cufftDoubleReal *wf_im2;
   //Allocate memory
   cudaMalloc((void **)&wf_im2, sizeof(cufftDoubleReal) * Length * NBatch);
-  cuDoubleComplex* V2 = (cuDoubleComplex*)thrust::raw_pointer_cast(d_fid_fft.data());
+  cuDoubleComplex* V2 = (cuDoubleComplex*)thrust::raw_pointer_cast(d_fid_fft_filtered.data());
   //Execute
   cufftExecZ2D(planZ2D, V2, wf_im2);
   //save in vector wf_im
   thrust::device_vector<double> d_wf_im(&wf_im2[0],&wf_im2[Length*NBatch]);
+  wf_im.resize(Length*NBatch);
+  thrust::copy(d_wf_im.begin(),d_wf_im.end(),wf_im.begin());
   //window_filter to get baseline*******************************************
   //We could change it to parallel setting using thrust if necessary
   //We could put it in front of first filter to save time
   unsigned int i_end2 = std::floor((Baseline_Freq_Thresh-freq[0])/interval);
   thrust::device_vector<thrust::complex<double>> d_baseline_fft=d_fid_fft;
   //filter, revise
+  //Cannot operate on device memory from host
   for(unsigned int j=0; j<NBatch; j++)
   {
-    for(unsigned int i=i_end2+1; i<m;i++)
+    thrust::fill(d_baseline_fft.begin()+j*m,d_baseline_fft.begin()+j*m+i_end2+1,thrust::complex<double>(0.0,0.0));
+   /* for(unsigned int i=i_end2+1; i<m;i++)
     {
       d_baseline_fft[i+j*NBatch]=thrust::complex<double>(0.0,0.0);
-    }
-  } 
+    }*/
+  }
 
   //irfft*******************************************
   //Instantiate the result vector
@@ -1268,29 +1278,30 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //
   thrust::transform(d_fid_fft.begin(),d_fid_fft.end(),d_psd.begin(),my_complex_norm());
   //copy to host
+  psd.resize(m*NBatch);
   thrust::copy(d_psd.begin(),d_psd.end(),psd.begin());
   //phase**********************************************
   thrust::device_vector<double> d_phase(NBatch*Length);
   // Calculate the modulo-ed phase
   thrust::transform(d_wf_im.begin(), d_wf_im.end(), d_filtered_wf.begin(),d_phase.begin(),ATan2());
+  phi.resize(Length*NBatch);
   thrust::copy(d_phase.begin(),d_phase.end(),phi.begin());
   // Now unwrap the phase
   double thresh = 0.5 * kTau;
   double u = 0.0;
   bool gave_warning = false;
-  int k = 0; // to track the winding number
   //check
-  for (auto it = phi.begin() + 1; it != phi.end(); ++it) {
+  
+  for (unsigned int j=0;j<NBatch;j++){
+    int k = 0; // to track the winding number
+    for (auto it = phi.begin() + j*Length + 1; it < phi.begin() + (j+1)*Length; ++it) {
 
-    // Add current total
-    *it += k * kTau;
-    u = *(it) - *(it - 1);
-    //Don't check at the end of each signal
-    int distance=thrust::distance(phi.begin(),it);
-    if(distance!=1 && (distance%Length)==1)
-    {
-      continue;
-    }else {
+      // Add current total
+      *it += k * kTau;
+      u = *(it) - *(it - 1);
+      //Don't check at the end of each signal
+      int distance=std::distance(phi.begin(),it);
+      //if(distance!=1 && (distance%Length)==1)
       // Check for large jumps, both positive and negative.
       while (std::abs(u) > kMaxPhaseJump) {
 
@@ -1326,75 +1337,84 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   thrust::device_vector<double> d_env(NBatch*Length);
 
   thrust::transform(d_filtered_wf.begin(), d_filtered_wf.end(), d_wf_im.begin(), d_env.begin(),AddSquare());
+  env.resize(Length*NBatch);
   thrust::copy(d_env.begin(),d_env.end(),env.begin());
   //BaselineCorrection
   //!!!!!!!!!Here I use filtered_wf to minux baseline
   // thrust::device_vector<double> d_wf_nobaseline(NBatch*Length);
   // thrust::transform(d_filtered_wf.begin(),d_filtered_wf.end(),d_baseline.begin(),d_wf_nobaseline.begin(),thrust::minus<double>());
-    //CalcMaxAmp*****************************************************
-    //initialize MaxAmp vector
-    thrust::device_vector<double> d_MaxAmp(NBatch);
+  //CalcMaxAmp*****************************************************
+  //initialize MaxAmp vector
+  thrust::device_vector<double> d_MaxAmp(NBatch);
   //!!!!!!!!!!!!Something weird with the label here
+  /*
   for(unsigned int i=0; i<NBatch; i++)
   {
-  d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin(),d_filtered_wf.end(),absolute_value<double>(),0,thrust::maximum<double>());
-  
-  //    d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin()+i*(Length),d_filtered_wf.begin()+(i+1)*Length-1,absolute_value<double>(),0,thrust::maximum<double>());
+    d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin(),d_filtered_wf.end(),absolute_value<double>(),0,thrust::maximum<double>());
+
+    //    d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin()+i*(Length),d_filtered_wf.begin()+(i+1)*Length-1,absolute_value<double>(),0,thrust::maximum<double>());
   }
+  max_amp.resize(NBatch);
   thrust::copy(d_MaxAmp.begin(),d_MaxAmp.end(),max_amp.begin());
+  */
   //FindFidRange***************************************************************
   //FindFidRange(start_amplitude,edge_ignore,Length, NBatch,&max_amp,&filtered_wf,&tm,&iwf,&fwf,&health);
   //We need to define start_amplitude
+  /*
+  iwf.resize(NBatch);
+  fwf.resize(NBatch);
   for(unsigned int i=0;i<NBatch;i++)
   {
-  for(unsigned int j=0;j<Length;j++)
-  { 
-  if(filtered_wf[i*Length+j]==max_amp[i]) 
-  {
-  iwf[i]=j;
-  break;
-  }  
-  else
-  {
-  ;
+    for(unsigned int j=0;j<Length;j++)
+    { 
+      if(filtered_wf[i*Length+j]==max_amp[i]) 
+      {
+	iwf[i]=j;
+	break;
+      }  
+      else
+      {
+	;
+      }
+    }
   }
-  }
-  }
-  double start_amplitude;
-  std::vector<double> threshold;
+  std::vector<double> threshold(NBatch);
   std::transform(max_amp.begin(),max_amp.end(),threshold.begin(),std::bind1st(std::multiplies<double>(),start_amplitude));
   for(unsigned int i=0;i<NBatch;i++)
   {
-  for(unsigned int j=Length;j>0;j--)
-  {
-  if(filtered_wf[i*Length+j]<threshold[i])
-  {
-  fwf[i]=j;
-  break;
-  }
-  else
-  {
-  ;
-  }
-  }
+    for(unsigned int j=Length;j>0;j--)
+    {
+      if(filtered_wf[i*Length+j]<threshold[i])
+      {
+	fwf[i]=j;
+	break;
+      }
+      else
+      {
+	;
+      }
+    }
   }
   for(unsigned int i=0; i<NBatch; i++)
   {
-  if(iwf[i]>Length*0.95||iwf[i]>=fwf[i])
-  {
-  health[i]=0.0;
+    if(iwf[i]>Length*0.95||iwf[i]>=fwf[i])
+    {
+      health[i]=0.0;
+    }
+    else
+    {
+      ;
+    }
   }
-  else
-  {
-  ;
-  }
-  }
+   */
   //CalcNoise*******************************************************
   //maybe we have use these parameters before
+  std::cout <<"BBBBBBBBBBBBBB"<<std::endl;
   int start=edge_ignore/(tm[1]-tm[0]);
   int end=edge_width/(tm[1]-tm[0])+start;
   //stdev-------GPUversion
   //mean of each vector
+  /*
   thrust::device_vector<double> mean1(NBatch);
   thrust::device_vector<double> mean2(NBatch);
   //!!!!!!!!!!!!!!Something weird with the label here
@@ -1406,6 +1426,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   {
     mean2[i]=thrust::reduce(d_filtered_wf.rbegin()+i*Length+start,d_filtered_wf.rbegin()+i*Length+end,0)/Length;
   }
+  */
   //structure of shift and square
   //struct varianceshiftop
   //{ 
@@ -1417,7 +1438,8 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //}
   //}
   //noise of each vector
-  thrust::device_vector<double> head(NBatch);
+  std::cout <<"CCCCCCCCCCCCCC"<<std::endl;
+  /*thrust::device_vector<double> head(NBatch);
   thrust::device_vector<double> tail(NBatch);
   for(unsigned int i=0;i<NBatch;i++)
   {
@@ -1455,9 +1477,14 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //return sqrt(x);
   //}
   thrust::transform(d_noise.begin(),d_noise.end(),d_noise.begin(),Sqrt());
+  */
   //max_idx_fft and i_fft , f_fft 
+  i_fft.resize(NBatch);
+  f_fft.resize(NBatch);
   //this is in host
   unsigned int fft_peak_index_width = static_cast<int>(fft_peak_width/interval);
+  //Cannot operate on device memory from host
+  /*
   for(unsigned int j=0;j<NBatch;j++)
   {
     max_idx_fft[j]=std::distance(d_psd.begin()+j*Length,std::max_element(d_psd.begin()+j*Length+1,d_psd.begin()+(j+1)*Length)-1);
@@ -1465,13 +1492,15 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
     else i_fft[j]=max_idx_fft[j]-fft_peak_index_width;
     f_fft[j]=max_idx_fft[j]+fft_peak_index_width;
     if(f_fft[j]>m) f_fft[j]=m;
-  }
+  }*/
+  std::cout <<"DDDDDDDDDDDDDD"<<std::endl;
   //CudaFree!!!!
 
   //We don't need d_data anymore
-  cudaFree(d_data);
+//  cudaFree(d_data);
   //copy vector out
 
+  std::cout <<"EEEEEEEEEEEEEE"<<std::endl;
 
   return 0;
 }
@@ -1721,5 +1750,5 @@ std::vector<double> savgol5(const std::vector<double>& v)
     return v;
   }
 }
-} // ::dsp//class IntegratedProcessor
+} // ::dsp
 

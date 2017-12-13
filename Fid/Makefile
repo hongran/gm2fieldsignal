@@ -1,8 +1,11 @@
 # Grab the targets and sources as two batches
-SOURCES = $(wildcard src/*.cxx)
-HEADERS = $(wildcard include/*)
-OBJECTS = $(patsubst src%.cxx,obj%.o,$(SOURCES))
+#SOURCES = $(wildcard src/*.cxx)
+#HEADERS = $(wildcard include/*)
+#OBJECTS = $(patsubst src%.cxx,obj%.o,$(SOURCES))
 
+SOURCES=src/fid.cxx
+HEADERS=include/fid.h
+OBJECTS=obj/fid.o
 # Versioning info
 MAJOR=0
 MINOR=0.0
@@ -59,11 +62,12 @@ LIBS += -lboost_filesystem -lboost_system
 
 FLAGS += $(shell root-config --cflags)
 LIBS  += $(shell root-config --libs)
+GPU_FLAGS := -I$(CUDA_HOME)/include
 
 all: lib/$(LIBNAME)
 
 obj/%.o: src/%.cxx
-	$(CXX) $(FLAGS) -o $@ -c $<
+	$(CXX) $(FLAGS) $(GPU_FLAGS) -o $@ -c $<
 
 lib/$(LIBNAME): $(OBJECTS)
 	$(CXX) -shared -fPIC $+ -o $@ $(LIBS)

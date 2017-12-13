@@ -1,6 +1,8 @@
 # Grab the targets and sources as two batches
-SOURCES = $(wildcard src/*.cxx)
-EXE = $(patsubst src%.cxx,bin%,$(SOURCES))
+#SOURCES = $(wildcard src/*.cxx)
+#EXE = $(patsubst src%.cxx,bin%,$(SOURCES))
+SOURCES=src/TestFpsFid.cxx)
+EXE=bin/TestFpsFid
 
 # Figure out the architecture
 UNAME_S = $(shell uname -s)
@@ -36,6 +38,7 @@ endif
 LIBS += -lboost_filesystem -lboost_system
 
 FLAGS += -Wall $(DEBUG) $(OPTIMIZE) -I$(GM2FIELDSIGNALLIB)/include
+GPU_FLAGS := -I$(CUDA_HOME)/include
 
 LIBS += -L$(GM2FIELDSIGNALLIB)/lib -lm -lfid
 
@@ -45,7 +48,7 @@ LIBS  += $(shell root-config --libs)
 all: $(EXE) 
 
 bin/%: src/%.cxx
-	$(CXX) $(FLAGS) $(LIBS) -o $@ $<
+	$(CXX) $(FLAGS) $(GPU_FLAGS) $(LIBS) -o $@ $<
 
 clean:
 	rm -f $(EXE)
