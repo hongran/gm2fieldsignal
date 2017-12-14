@@ -16,13 +16,13 @@ int main(int argc,char ** argv){
   int EventID = atoi(argv[2]);
   int ProbeStart = atoi(argv[3]);
   unsigned int NBatch = atoi(argv[4]);
-  unsigned int fid_size = 4096;
+  unsigned int fid_size = 40960;
 
   std::vector<double> V;
   std::vector<double> T;
 
   TFile* filein = new TFile(Form("/home/newg2/DataProduction/Nearline/ArtTFSDir/FpsFidGraphOut%05d_tier0.root",run),"read");
-  TDirectory * d1 = (TDirectory*)filein->Get("PlotFixedProbeFid");
+  TDirectory * d1 = (TDirectory*)filein->Get("PlotFixedProbeFullFid");
   gROOT->cd();
  
   for (unsigned int ProbeID=ProbeStart;ProbeID<ProbeStart+NBatch;ProbeID++){
@@ -81,6 +81,11 @@ int main(int argc,char ** argv){
   auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
   double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
   std::cout << "Time = "<<t<<std::endl;
+  myFid.Init("Standard");
+  auto t2 = std::chrono::high_resolution_clock::now();
+  auto dtn2 = t2.time_since_epoch() - t1.time_since_epoch();
+  double dt2 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn2).count();
+  std::cout << "Time = "<<dt2<<std::endl;
 /*  std::cout<<"PD: " << myFid.GetFreq("PD")<<std::endl;
   std::cout<<"ZC: " << myFid.GetFreq("ZC")<<std::endl;
   auto t0lz = std::chrono::high_resolution_clock::now();
