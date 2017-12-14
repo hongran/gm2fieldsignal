@@ -108,6 +108,7 @@ class Fid {
   //Set noise and baselien by user
   void SetNoise(double NoiseValue);
   void SetBaseline(const std::vector<double>& bl);
+  void SetPoln(unsigned int N){ poln = N;}
 
   // Frequency Extraction Methods
   void CalcZeroCountFreq();
@@ -117,7 +118,7 @@ class Fid {
   void CalcSoftLorentzianFreq();
   void CalcExponentialFreq();
   void CalcPhaseFreq();
-  void CalcPhaseDerivFreq(int poln=3);
+  void CalcPhaseDerivFreq();
   void CalcSinusoidFreq();
 
   void CalcNoise();
@@ -157,6 +158,7 @@ class Fid {
   //Store freq from all methods
   std::vector<std::vector<double>> freq_array_;
   std::vector<std::vector<double>> freq_err_array_;
+  std::vector<std::vector<double>> fit_parameters_;
   std::vector<double> chi2_; // Store the most recent chi2
 
   //Parameters
@@ -172,6 +174,7 @@ class Fid {
   double snr_thresh_ = 10.0;
   double len_thresh_ = 0.025;
   Method freq_method_ = PH;
+  unsigned int poln = 2; //Order of polynomial for phase fit
 
   // For fits.
 //  std::vector<double> guess_;

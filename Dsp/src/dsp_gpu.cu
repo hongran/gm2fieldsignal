@@ -856,10 +856,16 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
   cudaMemcpy(d_res, d_b, N_Eq*sizeof(double), cudaMemcpyDeviceToDevice);
   cudaMemcpy(d_data, Vdata, N_Eq*sizeof(double), cudaMemcpyHostToDevice);
 
+  auto t0 = std::chrono::high_resolution_clock::now();
   //Make Matrix A
   dim3 DimBlock (NPar,16);
   dim3 DimGrid (1, N_Eq/16+1);
   MakeMatrix<<<DimGrid, DimBlock>>>(d_data,d_A,NPar,N_Eq);
+
+  auto t1 = std::chrono::high_resolution_clock::now();
+  auto dtn1 = t1.time_since_epoch() - t0.time_since_epoch();
+  double dt1 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn1).count();
+  std::cout << "Time for making matrix  = "<<dt1<<std::endl;
 
   const double alpha = 1.0;
   const double beta  = 0.0;
@@ -889,7 +895,17 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
 //  cusolverDnSetStream(handle, stream);
 //  cublasSetStream(cublasHandle, stream);
 
+  auto t2 = std::chrono::high_resolution_clock::now();
+  auto dtn2 = t2.time_since_epoch() - t1.time_since_epoch();
+  double dt2 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn2).count();
+  std::cout << "Time for ATA  = "<<dt2<<std::endl;
+
   linearSolverCHOL(handle, NPar, d_M, NPar, d_rh, d_par);
+
+  auto t3 = std::chrono::high_resolution_clock::now();
+  auto dtn3 = t3.time_since_epoch() - t2.time_since_epoch();
+  double dt3 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn3).count();
+  std::cout << "Time for solvingmatrix  = "<<dt3<<std::endl;
 
   //Calculate residual
 
@@ -1130,11 +1146,12 @@ IntegratedProcessor::IntegratedProcessor(unsigned int BatchNum, unsigned int len
     cufftPlan1d(&planZ2Z, Length, CUFFT_Z2Z, NBatch);
 }
 
-int IntegratedProcessor::SetFilters(double low, double high , double baseline_thresh)
+int IntegratedProcessor::SetFilters(double low, double high , double baseline_thresh, double peak_width)
 {
   WindowFilterLow = low;
   WindowFilterHigh = high;
   Baseline_Freq_Thresh = baseline_thresh;
+  fft_peak_width = peak_width;
   return 0;
 }
 
@@ -1146,9 +1163,20 @@ int IntegratedProcessor::SetEdges(double ignore, double width)
   return 0;
 }
 
+int IntegratedProcessor::SetAmpThreshold(double Thresh)
+{
+  start_amplitude = Thresh;
+  return 0;
+}
+
 void IntegratedProcessor::AnaSwith(bool sw)
 {
   FreqAnaSwitch = sw;
+}
+
+void IntegratedProcessor::SetNFitPar(unsigned int N)
+{
+  NFitPar = N;
 }
 
 int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector<double>& tm, std::vector<double>& freq,
@@ -1156,8 +1184,11 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
 	std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,
 	std::vector<unsigned int>& iwf, std::vector<unsigned int>& fwf,
 	std::vector<unsigned int> max_idx_fft,std::vector<unsigned int>& i_fft,std::vector<unsigned int>& f_fft, 
-	std::vector<double> max_amp,std::vector<unsigned short>& health)
+	std::vector<double> max_amp,std::vector<unsigned short>& health,
+	std::vector<std::vector<double>>& FreqResArray,std::vector<std::vector<double>>& FreqErrResArray,
+	std::vector<std::vector<double>>& FitPars,std::vector<double>& ResidualOut)
 {
+  auto t0 = std::chrono::high_resolution_clock::now();
   //CalcFftFreq*********************************************
   double dt=tm[1]-tm[0];
   //Resize freq to the same dimension
@@ -1293,6 +1324,11 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   bool gave_warning = false;
   //check
   
+  auto t1 = std::chrono::high_resolution_clock::now();
+  auto dtn1 = t1.time_since_epoch() - t0.time_since_epoch();
+  double dt1 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn1).count();
+  std::cout << "Time FFTs  = "<<dt1<<std::endl;
+
   for (unsigned int j=0;j<NBatch;j++){
     int k = 0; // to track the winding number
     for (auto it = phi.begin() + j*Length + 1; it < phi.begin() + (j+1)*Length; ++it) {
@@ -1333,6 +1369,10 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
       }
     }
   }
+  auto t2 = std::chrono::high_resolution_clock::now();
+  auto dtn2 = t2.time_since_epoch() - t1.time_since_epoch();
+  double dt2 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn2).count();
+  std::cout << "Time unrapping phase = "<<dt2<<std::endl;
   //envelope***************************************************  
 
   thrust::device_vector<double> d_env(NBatch*Length);
@@ -1353,8 +1393,12 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   
   for(unsigned int i=0; i<NBatch; i++)
   {
-    thrust::device_vector<double>::iterator iter =  thrust::max_element(d_filtered_wf.begin()+i*Length,d_filtered_wf.begin()+(i+1)*Length);
-    iwf[i] = iter - (d_filtered_wf.begin()+i*Length);
+    //thrust::device_vector<double>::iterator iter =  thrust::max_element(d_filtered_wf.begin()+i*Length,d_filtered_wf.begin()+(i+1)*Length);
+    //iwf[i] = iter - (d_filtered_wf.begin()+i*Length);
+    //max_amp[i] = *iter;
+
+    auto iter = std::max_element(env.begin()+i*Length,env.begin()+(i+1)*Length);
+    iwf[i]=std::distance(env.begin()+i*Length,iter);
     max_amp[i] = *iter;
     //d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin(),d_filtered_wf.end(),absolute_value<double>(),0,thrust::maximum<double>());
 
@@ -1404,6 +1448,27 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
       ;
     }
   }
+
+  //max_idx_fft and i_fft , f_fft 
+  max_idx_fft.resize(NBatch);
+  i_fft.resize(NBatch);
+  f_fft.resize(NBatch);
+  //this is in host
+  
+  unsigned int fft_peak_index_width = static_cast<int>(fft_peak_width/interval);
+  for(unsigned int j=0;j<NBatch;j++)
+  {
+    max_idx_fft[j]=std::distance(psd.begin()+j*m,std::max_element(psd.begin()+j*m+1,psd.begin()+(j+1)*m));
+    if(max_idx_fft[j]<=fft_peak_index_width) i_fft[j]=1;
+    else i_fft[j]=max_idx_fft[j]-fft_peak_index_width;
+    
+    f_fft[j]=max_idx_fft[j]+fft_peak_index_width;
+    if(f_fft[j]>m) f_fft[j]=m;
+  }
+  auto t3 = std::chrono::high_resolution_clock::now();
+  auto dtn3 = t3.time_since_epoch() - t2.time_since_epoch();
+  double dt3 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn3).count();
+  std::cout << "Time for finding ranges = "<<dt3<<std::endl;
   //CalcNoise*******************************************************
   //maybe we have use these parameters before
   std::cout <<"BBBBBBBBBBBBBB"<<std::endl;
@@ -1436,6 +1501,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //}
   //noise of each vector
   std::cout <<"CCCCCCCCCCCCCC"<<std::endl;
+  
   thrust::device_vector<double> head(NBatch);
   thrust::device_vector<double> tail(NBatch);
   for(unsigned int i=0;i<NBatch;i++)
@@ -1474,24 +1540,22 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //return sqrt(x);
   //}
   thrust::transform(d_noise.begin(),d_noise.end(),d_noise.begin(),Sqrt());
-  
-  //max_idx_fft and i_fft , f_fft 
-  max_idx_fft.resize(NBatch);
-  i_fft.resize(NBatch);
-  f_fft.resize(NBatch);
-  //this is in host
-  unsigned int fft_peak_index_width = static_cast<int>(fft_peak_width/interval);
-  for(unsigned int j=0;j<NBatch;j++)
-  {
-    max_idx_fft[j]=std::distance(psd.begin()+j*Length,std::max_element(psd.begin()+j*Length+1,psd.begin()+(j+1)*Length));
-    //max_idx_fft[j]=std::distance(d_psd.begin()+j*Length,std::max_element(d_psd.begin()+j*Length+1,d_psd.begin()+(j+1)*Length)-1);
-    if(max_idx_fft[j]<=fft_peak_index_width) i_fft[j]=1;
-    else i_fft[j]=max_idx_fft[j]-fft_peak_index_width;
-    f_fft[j]=max_idx_fft[j]+fft_peak_index_width;
-    if(f_fft[j]>m) f_fft[j]=m;
-  }
+ 
   std::cout <<"DDDDDDDDDDDDDD"<<std::endl;
 
+  auto t4 = std::chrono::high_resolution_clock::now();
+  auto dtn4 = t4.time_since_epoch() - t3.time_since_epoch();
+  double dt4 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn4).count();
+  std::cout << "Time for noise = "<<dt4<<std::endl;
+  //Fit phase to linear functions
+  for(unsigned int j=0;j<NBatch;j++)
+  {
+    linear_fit(tm,phi, j*Length+iwf[j], j*Length+fwf[j] , NFitPar, FitPars[j], ResidualOut);
+  }
+  auto t5 = std::chrono::high_resolution_clock::now();
+  auto dtn5 = t5.time_since_epoch() - t4.time_since_epoch();
+  double dt5 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn5).count();
+  std::cout << "Time for fit = "<<dt5<<std::endl;
   return 0;
 }
 

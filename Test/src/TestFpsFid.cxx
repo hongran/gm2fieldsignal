@@ -15,7 +15,7 @@ int main(int argc,char ** argv){
   int run  = atoi(argv[1]);
   int EventID = atoi(argv[2]);
   int ProbeStart = atoi(argv[3]);
-  unsigned int NBatch = 50;
+  unsigned int NBatch = atoi(argv[4]);
   unsigned int fid_size = 4096;
 
   std::vector<double> V;
@@ -75,7 +75,12 @@ int main(int argc,char ** argv){
     double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
     std::cout << "Time = "<<t<<std::endl;
   }*/
+  auto t0 = std::chrono::high_resolution_clock::now();
   myFid.Init("Standard");
+  auto t1 = std::chrono::high_resolution_clock::now();
+  auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
+  double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
+  std::cout << "Time = "<<t<<std::endl;
 /*  std::cout<<"PD: " << myFid.GetFreq("PD")<<std::endl;
   std::cout<<"ZC: " << myFid.GetFreq("ZC")<<std::endl;
   auto t0lz = std::chrono::high_resolution_clock::now();
@@ -87,7 +92,6 @@ int main(int argc,char ** argv){
   std::cout << myFid.amp()<<std::endl;
   std::cout << myFid.snr()<<std::endl;
 //  myFid.CalcLorentzianFreq();
-  auto FitFunc = myFid.f_fit();
   std::cout << myFid.i_wf()<<std::endl;
   std::cout << myFid.f_wf()<<std::endl;
 */
@@ -164,6 +168,19 @@ int main(int argc,char ** argv){
   }
 */
 
+  TGraph * gPhiFit[400];
+  TF1 FitFunc[400];
+  for (unsigned int j=0;j<NBatch;j++){
+    gPhiFit[j] = new TGraph();
+    gPhiFit[j]->SetName(Form("PhiFit%d",j));
+    for (unsigned int i=0;i<fid_size;i++){
+      gPhiFit[j]->SetPoint(i,tm[j*fid_size+i],Phi[j*fid_size+i]);
+    }
+    FitFunc[j] = myFid.f_fit(j);
+  }
+
+
+
   TFile * FileOut = new TFile("TestOut.root","recreate");
   gWf->Write();
   gPsd->Write();
@@ -175,9 +192,15 @@ int main(int argc,char ** argv){
   gEnv->Write();
   gEnvN->Write();
  // gRes->Write();
- // FitFunc.Write();
+  for (unsigned int j=0;j<NBatch;j++){
+    gPhiFit[j]->Write();
+    FitFunc[j].Write();
+  }
   FileOut->Close();
   delete FileOut;
 
+  for (unsigned int j=0;j<NBatch;j++){
+    delete gPhiFit[j];
+  }
   return 0;
 }

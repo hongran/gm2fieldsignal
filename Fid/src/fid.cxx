@@ -142,6 +142,7 @@ void Fid::Init(std::string Option)
 
   freq_array_ = std::vector<std::vector<double>>(NBatch,std::vector<double>(8,-1));
   freq_err_array_ = std::vector<std::vector<double>>(NBatch,std::vector<double>(8,-1));
+  fit_parameters_ =  std::vector<std::vector<double>>(NBatch,std::vector<double>());
   chi2_ = std::vector<double>(NBatch,-1); 
 
   // For fits.
@@ -181,8 +182,20 @@ void Fid::Init(std::string Option)
 	filtered_wf_, wf_im_ ,baseline_,
 	psd_, phi_ , env_,
 	i_wf_,f_wf_, max_idx_fft_,i_fft_,f_fft_, 
-	max_amp_,health_);
+	max_amp_,health_,freq_array_,freq_err_array_,fit_parameters_,res_);
     std::cout <<"AAAAAAAAAA"<<std::endl;
+    unsigned int NPar = fit_parameters_[0].size();
+    for (unsigned int i=0 ; i<NBatch; i++){
+      // Now set up the polynomial phase fit
+      char fcn[20];
+      char fcnName[20];
+      sprintf(fcn, "pol%d", NPar-1);
+      sprintf(fcnName, "f_fit_%03d", i);
+      f_fit_[i] = TF1(fcnName, fcn,tm_[i*fid_size+i_wf_[i]],tm_[i*fid_size+f_wf_[i]-1]);
+      for (unsigned int j=0;j<NPar;j++){
+	f_fit_[i].SetParameter(j,fit_parameters_[i][j]);
+      }
+    }
     /*CallFFT();
     CalcPowerEnvAndPhase();
     BaselineCorrection();
@@ -949,7 +962,7 @@ void Fid::CalcExponentialFreq()
 void Fid::CalcPhaseFreq()
 {
   /*
-  int poln = 1;
+  poln = 1;
   //Requires FFT
   if (!FFTDone)return 0;
 //  gr_time_series_ = TGraph(f_wf_ - i_wf_, &tm_[i_wf_], &phi_[i_wf_]);
@@ -983,7 +996,7 @@ void Fid::CalcPhaseFreq()
   ;
 }
 
-void Fid::CalcPhaseDerivFreq(int poln)
+void Fid::CalcPhaseDerivFreq()
 {
   /*
   //Requires FFT

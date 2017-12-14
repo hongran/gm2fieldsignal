@@ -271,30 +271,35 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
 class IntegratedProcessor{
   public:
     IntegratedProcessor(unsigned int BatchNum, unsigned int len);
-    int SetFilters(double low, double high, double baseline_thresh );
+    int SetFilters(double low, double high, double baseline_thresh, double peak_width );
     int SetEdges(double ignore, double width);
+    int SetAmpThreshold(double Thresh);
     void AnaSwith(bool sw);
+    void SetNFitPar(unsigned int N);
     int Process(const std::vector<double>& wf,const std::vector<double>& tm, std::vector<double>& freq,
 	std::vector<double>& filtered_wf, std::vector<double>& wf_im, std::vector<double>& baseline,
 	std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,
 	std::vector<unsigned int>& iwf, std::vector<unsigned int>& fwf,
 	std::vector<unsigned int> max_idx_fft,std::vector<unsigned int>& i_fft,std::vector<unsigned int>& f_fft, 
-	std::vector<double> max_amp,std::vector<unsigned short>& health);
+	std::vector<double> max_amp,std::vector<unsigned short>& health,
+	std::vector<std::vector<double>>& FreqResArray,std::vector<std::vector<double>>& FreqErrResArray,
+	std::vector<std::vector<double>>& FitPars,std::vector<double>& ResidualOut);
+
   protected:
     unsigned int Length;
     unsigned int NBatch;
     double WindowFilterLow = 20000.0;
     double WindowFilterHigh = 80000.0;
     double Baseline_Freq_Thresh = 500.0;
+    double fft_peak_width = 5000.0;
     double edge_ignore = 6e-5;
     double edge_width = 2e-5;
     double start_amplitude = 0.37;
-    double fft_peak_width = 5000.0;
     bool FreqAnaSwitch = true;
-    double Freq;
-    double FreqErr;
+    unsigned int NFitPar = 3;
+    std::vector<std::vector<double>> FitParameters;
+    std::vector<double> Residual;
     //
-    //not sure about this
 
     //FFT plans
 
