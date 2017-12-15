@@ -66,6 +66,16 @@ struct Add
   }
 };
 
+//Scale Add: A + k*B
+struct ScaleAdd
+{
+  double k;
+  ScaleAdd(const double _k) : k(_k){}
+  __host__ __device__ double operator()(double x, double y){
+    return x + k*y;
+  }
+};
+
 struct Subtract
 {
   Subtract(){}
@@ -179,6 +189,58 @@ __global__ void ComplexScale(const double c,cufftDoubleComplex* a,size_t N)
   if (i < N){
     a[i].x = a[i].x * c;
     a[i].y = a[i].y * c;
+  }
+}
+  
+__global__ void FindUnwindingNumber(const double *D_phase,double *D_phase_jumps,size_t Length,size_t NBatch,double thresh)
+{
+  int i = blockDim.x * blockIdx.x + threadIdx.x;
+  if (i<NBatch){
+    int k=0;
+    D_phase_jumps[i*Length] = 0.0;
+    for (unsigned int j = i*Length + 1; j < (i+1)*Length; j++) {
+      double u = D_phase[j] - D_phase[j - 1];
+      if (-u > thresh){
+	k++;
+      }
+      if (u > thresh){
+	k--;
+      }
+      D_phase_jumps[j]=k;
+    }
+  }
+}
+
+__global__ void BatchFindRange(const double * D_env,double * D_MaxAmp, unsigned int * D_iwf, unsigned int * D_fwf,size_t Length,size_t NBatch, double thresh)
+{
+  int i = blockDim.x * blockIdx.x + threadIdx.x;
+  if (i<NBatch){
+    auto it = thrust::max_element(thrust::device,D_env+i*Length,D_env+(i+1)*Length);
+    double max = *it;
+    D_MaxAmp[i] = max;
+    unsigned int k = thrust::distance(D_env+i*Length,it);
+    D_iwf[i] = k;
+    while (k<Length){
+      if (D_env[i*Length+k]<max*thresh){
+	D_fwf[i] = k;
+	break;
+      }
+      k++;
+    }
+  }
+}
+
+__global__ void BatchFindFFTRange(const double * D_psd,unsigned int * D_max_idx_fft,unsigned int * D_i_fft,unsigned int * D_f_fft,size_t Length,size_t NBatch,unsigned int fft_peak_index_width)
+{
+  int i = blockDim.x * blockIdx.x + threadIdx.x;
+  if (i<NBatch){
+    auto it = thrust::max_element(thrust::device,D_psd+i*Length,D_psd+(i+1)*Length);
+    unsigned int k = thrust::distance(D_psd+i*Length,it);
+    D_max_idx_fft[i] = k;
+    if(k<=fft_peak_index_width) D_i_fft[i]=1;
+    else D_i_fft[i]=k-fft_peak_index_width;
+    D_f_fft[i]=k+fft_peak_index_width;
+    if(D_f_fft[i]>Length) D_f_fft[i]=Length;
   }
 }
 
@@ -1312,61 +1374,32 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   thrust::transform(d_wf_im.begin(), d_wf_im.end(), d_filtered_wf.begin(),d_phase.begin(),ATan2());
   phi.resize(Length*NBatch);
   thrust::copy(d_phase.begin(),d_phase.end(),phi.begin());
-  // Now unwrap the phase
-  double thresh = 0.5 * kTau;
-  double u = 0.0;
-  bool gave_warning = false;
-  //check
-  
+
   auto t1 = std::chrono::high_resolution_clock::now();
   auto dtn1 = t1.time_since_epoch() - t0.time_since_epoch();
   double dt1 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn1).count();
   std::cout << "Time FFTs  = "<<dt1<<std::endl;
 
-  for (unsigned int j=0;j<NBatch;j++){
-    int k = 0; // to track the winding number
-    for (auto it = phi.begin() + j*Length + 1; it < phi.begin() + (j+1)*Length; ++it) {
+  // Now unwrap the phase
+  //Get the winding numbers
 
-      // Add current total
-      *it += k * kTau;
-      u = *(it) - *(it - 1);
-      //Don't check at the end of each signal
-      int distance=std::distance(phi.begin(),it);
-      //if(distance!=1 && (distance%Length)==1)
-      // Check for large jumps, both positive and negative.
-      while (std::abs(u) > kMaxPhaseJump) {
+  thrust::device_vector<double> d_phase_jumps(NBatch*Length);
+  double *D_phase = (double *)thrust::raw_pointer_cast(d_phase.data());
+  double *D_phase_jumps = (double *)thrust::raw_pointer_cast(d_phase_jumps.data());
+  dim3 DimBlock2 (16);
+  dim3 DimGrid2 (NBatch/16+1);
+  FindUnwindingNumber<<<DimGrid2, DimBlock2>>>(D_phase,D_phase_jumps,Length,NBatch,kMaxPhaseJump);
 
-	if (-u > kMaxPhaseJump) {
-
-	  if ((u + kTau > thresh) && (!gave_warning)) {
-	    std::cout << "Warning: jump over threshold." << std::endl;
-	    gave_warning = true;
-	    break;
-	  }
-
-	  k++;
-	  *it += kTau;
-
-	} else if (u > kMaxPhaseJump) {
-
-	  if ((u - kTau < -thresh) && (!gave_warning)) {
-	    std::cout << "Warning: jump over threshold." << std::endl;
-	    gave_warning = true;
-	    break;
-	  }
-
-	  k--;
-	  *it -= kTau;
-	}
-
-	u = *(it) - *(it - 1);
-      }
-    }
-  }
+  //Add the winding phases
+  thrust::transform(d_phase.begin(), d_phase.end(), d_phase_jumps.begin(), d_phase.begin(),ScaleAdd(kTau));
+  //Copy the unwinded phase back to host
+  thrust::copy(d_phase.begin(),d_phase.end(),phi.begin());
+  
   auto t2 = std::chrono::high_resolution_clock::now();
   auto dtn2 = t2.time_since_epoch() - t1.time_since_epoch();
   double dt2 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn2).count();
   std::cout << "Time unrapping phase = "<<dt2<<std::endl;
+  
   //envelope***************************************************  
 
   thrust::device_vector<double> d_env(NBatch*Length);
@@ -1381,10 +1414,22 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   //CalcMaxAmp*****************************************************
   max_amp.resize(NBatch);
   iwf.resize(NBatch);
+  fwf.resize(NBatch);
   //initialize MaxAmp vector
-//  thrust::device_vector<double> d_MaxAmp(NBatch);
-  //!!!!!!!!!!!!Something weird with the label here
-  
+  thrust::device_vector<double> d_MaxAmp(NBatch);
+  thrust::device_vector<unsigned int> d_iwf(NBatch);
+  thrust::device_vector<unsigned int> d_fwf(NBatch);
+
+  double *D_env = (double *)thrust::raw_pointer_cast(d_env.data());
+  double *D_MaxAmp = (double *)thrust::raw_pointer_cast(d_MaxAmp.data());
+  unsigned int *D_iwf = (unsigned int *)thrust::raw_pointer_cast(d_iwf.data());
+  unsigned int *D_fwf = (unsigned int *)thrust::raw_pointer_cast(d_fwf.data());
+  BatchFindRange<<<DimGrid2, DimBlock2>>>(D_env,D_MaxAmp,D_iwf,D_fwf,Length,NBatch,start_amplitude);
+  thrust::copy(d_MaxAmp.begin(),d_MaxAmp.end(),max_amp.begin());
+  thrust::copy(d_iwf.begin(),d_iwf.end(),iwf.begin());
+  thrust::copy(d_fwf.begin(),d_fwf.end(),fwf.begin());
+
+/*
   for(unsigned int i=0; i<NBatch; i++)
   {
     //thrust::device_vector<double>::iterator iter =  thrust::max_element(d_filtered_wf.begin()+i*Length,d_filtered_wf.begin()+(i+1)*Length);
@@ -1397,12 +1442,12 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
     //d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin(),d_filtered_wf.end(),absolute_value<double>(),0,thrust::maximum<double>());
 
     //    d_MaxAmp[i]=thrust::transform_reduce(d_filtered_wf.begin()+i*(Length),d_filtered_wf.begin()+(i+1)*Length-1,absolute_value<double>(),0,thrust::maximum<double>());
-  }
+  }*/
   //thrust::copy(d_MaxAmp.begin(),d_MaxAmp.end(),max_amp.begin());
   
   //FindFidRange***************************************************************
   //Start from max amplitude, and find the first position env decays below amplitude*start_amplitude, assign that to fwf[i]
-  fwf.resize(NBatch);
+  /*
   std::vector<double> threshold(NBatch);
   std::transform(max_amp.begin(),max_amp.end(),threshold.begin(),std::bind1st(std::multiplies<double>(),start_amplitude));
   for(unsigned int i=0;i<NBatch;i++)
@@ -1415,7 +1460,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
 	break;
       }
     }
-  }
+  }*/
   /*for(unsigned int i=0;i<NBatch;i++)
   {
     for(unsigned int j=Length;j>0;j--)
@@ -1447,9 +1492,23 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   max_idx_fft.resize(NBatch);
   i_fft.resize(NBatch);
   f_fft.resize(NBatch);
-  //this is in host
-  
   unsigned int fft_peak_index_width = static_cast<int>(fft_peak_width/interval);
+
+  thrust::device_vector<unsigned int> d_max_idx_fft(NBatch);
+  thrust::device_vector<unsigned int> d_i_fft(NBatch);
+  thrust::device_vector<unsigned int> d_f_fft(NBatch);
+
+  double *D_psd = (double *)thrust::raw_pointer_cast(d_psd.data());
+  unsigned int *D_max_idx_fft = (unsigned int *)thrust::raw_pointer_cast(d_max_idx_fft.data());
+  unsigned int *D_i_fft = (unsigned int *)thrust::raw_pointer_cast(d_i_fft.data());
+  unsigned int *D_f_fft = (unsigned int *)thrust::raw_pointer_cast(d_f_fft.data());
+  BatchFindFFTRange<<<DimGrid2, DimBlock2>>>(D_psd,D_max_idx_fft,D_i_fft,D_f_fft,m,NBatch,fft_peak_index_width);
+  thrust::copy(d_max_idx_fft.begin(),d_max_idx_fft.end(),max_idx_fft.begin());
+  thrust::copy(d_i_fft.begin(),d_i_fft.end(),i_fft.begin());
+  thrust::copy(d_f_fft.begin(),d_f_fft.end(),f_fft.begin());
+
+  //this is in host
+  /*
   for(unsigned int j=0;j<NBatch;j++)
   {
     max_idx_fft[j]=std::distance(psd.begin()+j*m,std::max_element(psd.begin()+j*m+1,psd.begin()+(j+1)*m));
@@ -1458,7 +1517,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
     
     f_fft[j]=max_idx_fft[j]+fft_peak_index_width;
     if(f_fft[j]>m) f_fft[j]=m;
-  }
+  }*/
   auto t3 = std::chrono::high_resolution_clock::now();
   auto dtn3 = t3.time_since_epoch() - t2.time_since_epoch();
   double dt3 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn3).count();
