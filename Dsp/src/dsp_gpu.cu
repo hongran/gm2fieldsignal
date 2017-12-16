@@ -182,7 +182,7 @@ __global__ void ComplexScale(const double c,cufftDoubleComplex* a,size_t N)
   }
 }
 
-__global__ void initBatchIndentity(const int size, const int NBatch,double *x, double **y)
+__global__ void initBatchIdentity(const int size, const int NBatch,double *x, double **y)
 {
 int i= blockDim.x * blockIdx.x + threadIdx.x;
 if ( i < NBatch )
@@ -212,7 +212,9 @@ int linearSolverCHOL(
     int lda,
     const double * d_b,
     const int NBatch,
-    double *d_Parlists
+    double *d_Parlists,
+    double *d_error,
+   bool control
     )
 {
   cudaError_t cudaStatus;
@@ -260,7 +262,22 @@ for(i=0;i<NBatch;i++)
 
 double **par_pointer=(double **)thrust::raw_pointer_cast(&Par_pointer[0]);
   cusolverDnDpotrsBatched(handle, uplo, n, 1, matrix_pointer, lda, par_pointer, lda,&info[0],NBatch);
+//error matrix modification
+if(control)
+{
+thrust::device_vector<double *> error_pinter(NBatch);
+double ** err_pointer=(double **)thrust::raw_pointer_cast(&error_pointer[0]);
+dim3 DimBlock (NBatch,16);
+dim3 DimGrid (1, 1);
+initBatchIdentity<<<DimGrid, DimBlock>>>(NPar,NBatch,d_error,err_pointer);
+cuvolverDnDpotrsBatched();
+}
+else
+{
+;
+}
 
+//
   cudaDeviceSynchronize();
 
    cudaFree(info); 
@@ -836,8 +853,9 @@ std::vector<double> convolve(const std::vector<double>& v, const std::vector<dou
   }
 }
  
-int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const std::vector<unsigned int> i_idx, const std::vector<unsigned int> f_idx , const size_t NPar,const unsigned int NBatch, const unsigned int Length,std::vector<std::vector<double>>& ParLists, std::vector<double>& Res)
+int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const std::vector<unsigned int> i_idx, const std::vector<unsigned int> f_idx , const size_t NPar,const unsigned int NBatch, const unsigned int Length,std::vector<std::vector<double>>& ParLists, std::vector<double>& Res;std::vector &err_matrix, bool control)
 {
+
   //Create the cuSolver
   static cusolverDnHandle_t handle = NULL;
   static cublasHandle_t cublasHandle = NULL; // used in residual evaluation
@@ -855,10 +873,12 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
 
   Res.resize(x.size());
   VecScale(0.0,Res);
+
 //
   const double * Vb = reinterpret_cast<const double *>(&y[0]);
   const double * Vdata = reinterpret_cast<const double *>(&x[0]);
   double * VRes = reinterpret_cast<double *>(&Res[0]);
+
 //save total makematrix 
   static double * d_A = nullptr;
 //save y
@@ -920,15 +940,35 @@ thrust::device_vector<double> total_matrix(NBatch*NPar*NPar);
     std::cout << "Time for ATA  = "<<dt2<<std::endl;
 */   
 }
+//error matrix modification
+  double *  error_matrix=reinterpret_cast<double *>(&err_matrix[0]);
+  double * d_error_matrix=nullptr;
+if(control)
+{
+  cudaMalloc(&d_error, NBatch*NPar*NPar);
+}
+else
+{
+  cudaMalloc(&d_error, 1);
+}
 
 //Calculate Parlist
 double * d_tmatrix= (double *)thrust::raw_pointer_cast(&total_matrix[0]);
 double * d_Parl= (double *)thrust::raw_pointer_cast(&d_Parlists[0]);
 double * d_b_total=(double *)thrust::raw_pointer_cast(&d_total_b[0]);
- linearSolverCHOL(handle, NPar, d_tmatrix,NPar,d_b_total,NBatch,d_Parl);
+ linearSolverCHOL(handle, NPar, d_tmatrix,NPar,d_b_total,NBatch,d_Parl.d_error,control);
 for(unsigned int i=0;i<NBatch;i++)
 { 
 thrust::copy(d_Parlists.begin()+NPar*i,d_Parlists.begin()+NPar*(i+1)-1,&ParLists[i][0]);
+}
+//copy error matrix
+if(control)
+{
+cudaMemcpy(error_matrix,d_error,NBatch*NPar*NPar*sizeof(double),cudaMemcpyDeviceToHost);
+}
+else
+{
+;
 }
  //Calculate Copy residual vector as a whole
     const double alpha2 = 1.0;
@@ -968,6 +1008,7 @@ thrust::copy(d_Parlists.begin()+NPar*i,d_Parlists.begin()+NPar*(i+1)-1,&ParLists
   //cudaFree(d_par);
   cudaFree(N_Eq);
 //  cudaFree(h_A);
+  cudaFree(d_error);
   return 0;
 }
 
@@ -1582,7 +1623,16 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   {
     linear_fit(tm,phi, j*Length+iwf[j], j*Length+fwf[j] , NFitPar, FitPars[j], ResidualOut);
   }*/
-  linear_fit(tm,phi, iwf, fwf , NFitPar,NBatch,Length, FitPars, ResidualOut);
+  bool control_matrix=true;
+  if( control_matrix)
+  {
+  std::vector<double> error_matrix(NBatch*NFitPar*NFitPar);
+  }
+  else
+  {
+  std::vector<double> error_matrix(1);
+  }
+  linear_fit(tm,phi, iwf, fwf , NFitPar,NBatch,Length, FitPars, ResidualOut,err_matrix,control_matrix);
   auto t5 = std::chrono::high_resolution_clock::now();
   auto dtn5 = t5.time_since_epoch() - t4.time_since_epoch();
   double dt5 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn5).count();
