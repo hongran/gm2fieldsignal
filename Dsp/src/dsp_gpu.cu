@@ -901,7 +901,7 @@ thrust::device_vector<double> total_matrix(NBatch*NPar*NPar);
    const double * d_MM =reinterpret_cast<double *>(&total_matrix[i*NPar*NPar]);
     //Make Matrix A
     dim3 DimBlock (NPar,16);
-    dim3 DimGrid (1, N_Eq/16+1);
+    dim3 DimGrid (1, N_Eq[i]/16+1);
     MakeMatrix<<<DimGrid, DimBlock>>>(d_data,d_A+i*NPar*Length,NPar,N_Eq[i],i*Length+i_idx[i]);
 /*    auto t1 = std::chrono::high_resolution_clock::now();
     auto dtn1 = t1.time_since_epoch() - t0.time_since_epoch();
@@ -930,7 +930,7 @@ double * d_tmatrix= reinterpret_cast<double>(total_matrix[0]);
 double * d_Parl= reinterpret_cast<double>(d_ParLists[0]);
 double * d_b_total=reinterpret_cast<double>(d_total_b);
  linearSolverCHOL(handle, NPar, d_tmatrix,NPar,d_b_total,NBatch,d_Parl);
-for(i=0;i<NBatch;i++)
+for(unsigned int i=0;i<NBatch;i++)
 { 
 thrust::copy(d_Parlists.begin()+NPar*i,d_Parlists.begin()+NPar*(i+1)-1,&ParLists[i][0]);
 }
