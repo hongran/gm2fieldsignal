@@ -832,67 +832,40 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
 
   Res.resize(x.size());
   VecScale(0.0,Res);
-  //minimize |Ax - b| 
-  //const double * Vb = reinterpret_cast<const double *>(&y[i_idx]);
-  //const double * Vdata = reinterpret_cast<const double *>(&x[i_idx]);
-  //double * VSol = reinterpret_cast<double *>(&ParList[0]);
-  //double * VRes = reinterpret_cast<double *>(&Res[i_idx]);
+//
   const double * Vb = reinterpret_cast<const double *>(&y[0]);
   const double * Vdata = reinterpret_cast<const double *>(&x[0]);
   double * VRes = reinterpret_cast<double *>(&Res[0]);
-//  double * h_A = nullptr;
-//  double * h_M = nullptr;
-  //Allocate Device memory
-/*  double * d_A = nullptr;
-  double * d_M = nullptr;
-  double * d_b = nullptr;
-  double * d_rh = nullptr;
-  double * d_data =nullptr;
-  double * d_par =nullptr;
-*/
+//save total makematrix 
   static double * d_A = nullptr;
-  static double * d_M = nullptr;
+//save y
   static double * d_b = nullptr;
+//save length of each signal
   static double * N_Eq= nullptr;
-
-  static double * d_rh = nullptr;
+//save x
   static double * d_data =nullptr;
+//save residue
   static double * d_res =nullptr;
-  static double * d_par =nullptr;
-  //size_t size_A = NPar*N_Eq*sizeof(double);
+ // size
   size_t size_A =NBatch*NPar*Length*sizeof(double);
-  size_t size_M = NPar*NPar*sizeof(double);
   size_t size_Eq= NBatch*sizeof(double);
-
+ //malloc
   cudaMalloc(&d_A, size_A);
-  cudaMalloc(&d_M, size_M);
   cudaMalloc(&N_Eq,size_Eq);
-  //cudaMalloc(&d_b, N_Eq*sizeof(double));
   cudaMalloc(&d_b, NBatch*Length*sizeof(double));
-  cudaMalloc(&d_rh, NPar*sizeof(double));
-  //cudaMalloc(&d_data, N_Eq*sizeof(double));
-  //cudaMalloc(&d_res, N_Eq*sizeof(double));
-  cudaMalloc(&d_data, NBatch*Length*sizeof(double));
+  cudaMalloc(&d_data, NBatch*Length*sizeof(double)); 
   cudaMalloc(&d_res, NBatch*Length*sizeof(double));
-  cudaMalloc(&d_par, NPar*sizeof(double));
-  /*
-  if (d_A==nullptr) cudaMalloc(&d_A, size_A);
-  if (d_M==nullptr) cudaMalloc(&d_M, size_M);
-  if (d_b==nullptr) cudaMalloc(&d_b, N_Eq*sizeof(double));
-  if (d_rh==nullptr) cudaMalloc(&d_rh, NPar*sizeof(double));
-  if (d_data==nullptr) cudaMalloc(&d_data, N_Eq*sizeof(double));
-  if (d_par==nullptr) cudaMalloc(&d_par, NPar*sizeof(double));
-*/
   //copy to device
   cudaMemcpy(d_b, Vb, NBatch*Length*sizeof(double), cudaMemcpyHostToDevice);
+
   cudaMemcpy(d_res, d_b, NBatch*Length*sizeof(double), cudaMemcpyDeviceToDevice);
   cudaMemcpy(d_data, Vdata, NBatch*Length*sizeof(double), cudaMemcpyHostToDevice);
+
 //save total parameters
 thrust::device_vector<double> d_Parlists(NBatch*NPar);
-//save total b
+//save total A_T*b
 thrust::device_vector<double> d_total_b(NBatch*NPar);
-
-//save total matrix
+//save total A_TA matrix
 thrust::device_vector<double> total_matrix(NBatch*NPar*NPar);
 //make matrix
   for (unsigned int i=0;i<NBatch;i++){
@@ -964,12 +937,12 @@ thrust::copy(d_Parlists.begin()+NPar*i,d_Parlists.begin()+NPar*(i+1)-1,&ParLists
   }
 */
   cudaFree(d_A);
-  cudaFree(d_M);
+ // cudaFree(d_M);
   cudaFree(d_b);
-  cudaFree(d_rh);
+  //cudaFree(d_rh);
   cudaFree(d_data);
   cudaFree(d_res);
-  cudaFree(d_par);
+  //cudaFree(d_par);
   cudaFree(N_Eq);
 //  cudaFree(h_A);
   return 0;
