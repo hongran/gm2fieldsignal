@@ -69,6 +69,9 @@ all: lib/$(LIBNAME)
 obj/%.o: src/%.cxx
 	$(CXX) $(FLAGS) $(GPU_FLAGS) -o $@ -c $<
 
+main: main.cxx
+	$(CXX) $(FLAGS) $(GPU_FLAGS) -o $@ -c $<
+
 lib/$(LIBNAME): $(OBJECTS)
 	$(CXX) -shared -fPIC $+ -o $@ $(LIBS)
 

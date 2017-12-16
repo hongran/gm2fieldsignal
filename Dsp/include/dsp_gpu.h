@@ -1,5 +1,5 @@
-#ifndef DSP_H
-#define DSP_H
+#ifndef DSP_GPU_H
+#define DSP_GPU_H
 
 /*===========================================================================*\
 
@@ -24,6 +24,13 @@ notes:
 #include <cuda_runtime.h>
 #include <cufft.h>
 #include <cuComplex.h>
+#include <thrust/complex.h>
+#include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
+#include <thrust/transform.h>
+#include <thrust/transform_reduce.h>
+#include <thrust/functional.h>
+#include <thrust/extrema.h>
 
 //--- other includes --------------------------------------------------------//
 #include <armadillo>
@@ -227,32 +234,50 @@ std::vector<double>& VecAdd(std::vector<double>& a, std::vector<double>& b);
 std::vector<double>& VecSubtract(std::vector<double>& a, std::vector<double>& b);
 std::vector<double>& VecScale(double c, std::vector<double>& a);
 std::vector<double>& VecShift(double c, std::vector<double>& a);
-double VecChi2(std::vector<double>& a);
-
-std::vector<double> normalized_gradient(int npoints, int poln=1); 
-
-std::vector<cdouble> ifft(const std::vector<cdouble>& v);
-std::vector<cdouble> rfft(const std::vector<double>& v);
-std::vector<double> irfft(const std::vector<cdouble>& v, bool is_odd);
-
-std::vector<double> hilbert(const std::vector<double>& v);
-std::vector<double> psd(const std::vector<double>& v);
-
 std::vector<double> norm(const std::vector<double>& v);
 std::vector<double> norm(const std::vector<cdouble>& v);
+double Chi2(std::vector<double>& a);
+
+//FFT
+class Processor{
+  public:
+    Processor(unsigned int N=4096,unsigned int NBatch=1):
+      FFTSize(N),batch(NBatch)
+  {
+    cufftPlan1d(&planZ2Z, FFTSize, CUFFT_Z2Z, batch);
+    cufftPlan1d(&planD2Z, FFTSize, CUFFT_D2Z, batch);
+    cufftPlan1d(&planZ2D, FFTSize, CUFFT_Z2D, batch);
+  }
+    void ResetPlan(unsigned int N,unsigned int NBatch)
+    {
+      FFTSize = N;
+      batch = NBatch;
+      cufftPlan1d(&planZ2Z, FFTSize, CUFFT_Z2Z, batch);
+      cufftPlan1d(&planD2Z, FFTSize, CUFFT_D2Z, batch);
+      cufftPlan1d(&planZ2D, FFTSize, CUFFT_Z2D, batch);
+    }
+
+    std::vector<cdouble> ifft(const std::vector<cdouble>& v,unsigned int N, unsigned int NBatch=1);
+    std::vector<cdouble> rfft(const std::vector<double>& v,unsigned int N, unsigned int NBatch=1);
+    std::vector<double> irfft(const std::vector<cdouble>& v,unsigned int N, unsigned int NBatch=1);
+
+    std::vector<double> hilbert(const std::vector<double>& v,unsigned int N, unsigned int NBatch=1);
+    std::vector<cdouble> window_filter(const std::vector<cdouble>& spectrum, const std::vector<double>& time, double low, double high,unsigned int N, unsigned int NBatch=1);
+    std::vector<double> psd(const std::vector<cdouble>& v);
+    std::vector<double> phase(const std::vector<double>& wf_re,const std::vector<double>& wf_im,unsigned int N, unsigned int NBatch=1);
+    std::vector<double> envelope(const std::vector<double>& wf_re, const std::vector<double>& wf_im);	
+  private:
+    unsigned int FFTSize;
+    unsigned int batch;
+    cufftHandle planZ2Z;
+    cufftHandle planD2Z;
+    cufftHandle planZ2D;
+};
 
 std::vector<double> fftfreq(const std::vector<double>& tm);
 std::vector<double> fftfreq(const int N, const double dt);
+std::vector<double> normalized_gradient(int npoints, int poln=1); 
 
-std::vector<cdouble> window_filter(const std::vector<cdouble>& spectrum, const std::vector<double>& time, double low, double high);
-
-std::vector<double> phase(const std::vector<double>& v);
-std::vector<double> phase(const std::vector<double>& wf_re, 
-                          const std::vector<double>& wf_im);
-
-std::vector<double> envelope(const std::vector<double>& v);
-std::vector<double> envelope(const std::vector<double>& wf_re, 
-                             const std::vector<double>& wf_im);	
 /*
 arma::cx_mat wvd_cx(const std::vector<double>& v, bool upsample=false);
 arma::mat wvd(const std::vector<double>& v, bool upsample=false);
@@ -266,7 +291,8 @@ int convolve(const std::vector<double>& v,
              const std::vector<double>& filter, 
              std::vector<double>& res);
 
-int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const unsigned int i_idx, const unsigned int f_idx ,  const size_t NPar, std::vector<double>& ParList, std::vector<double>& Res);
+//Fitters
+int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const std::vector<unsigned int> i_idx, const std::vector<unsigned int> f_idx , const size_t NPar,const unsigned int NBatch, const unsigned int Length,std::vector<std::vector<double>>& ParLists, std::vector<double>& Res);
 
 class IntegratedProcessor{
   public:

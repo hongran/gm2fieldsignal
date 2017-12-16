@@ -200,6 +200,7 @@ class Fid {
 //  std::vector<double> temp_; // for random transformations
 
   //Integrated Processor Class
+//  dsp::Processor theProcessor;
   dsp::IntegratedProcessor theIntegratedProcessor;
 
   // Private Member Functions  

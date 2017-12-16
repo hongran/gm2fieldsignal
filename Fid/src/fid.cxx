@@ -3,14 +3,14 @@
 
 namespace fid {
 
-Fid::Fid(unsigned int tNBatch, unsigned int tSize):theIntegratedProcessor(tNBatch,tSize)
+Fid::Fid(unsigned int tNBatch, unsigned int tSize):/*theProcessor(tNBatch,tSize),*/theIntegratedProcessor(tNBatch,tSize)
 {
   NBatch = tNBatch;
   fid_size = tSize;
   FFTDone = false;
 }
 
-Fid::Fid(const std::vector<double>& wf, const std::vector<double>& tm):theIntegratedProcessor(1,wf.size())
+Fid::Fid(const std::vector<double>& wf, const std::vector<double>& tm):/*theProcessor(1,wf.size()),*/theIntegratedProcessor(1,wf.size())
 {
   NBatch = 1;
   fid_size = wf.size();
@@ -20,7 +20,7 @@ Fid::Fid(const std::vector<double>& wf, const std::vector<double>& tm):theIntegr
   tm_ = tm;
 }
 
-Fid::Fid(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize):theIntegratedProcessor(tNBatch,tSize)
+Fid::Fid(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize):/*theProcessor(1,wf.size()),*/theIntegratedProcessor(tNBatch,tSize)
 {
   NBatch = tNBatch;
   fid_size = tSize;;
@@ -38,7 +38,7 @@ Fid::Fid(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigne
   }
 }
 
-Fid::Fid(const std::vector<double>& wf):theIntegratedProcessor(1,wf.size())
+Fid::Fid(const std::vector<double>& wf):/*theProcessor(1,wf.size()),*/theIntegratedProcessor(1,wf.size())
 {
   NBatch = 1;
   fid_size = wf.size();
@@ -65,6 +65,7 @@ void Fid::SetWf(const std::vector<double>& wf, double dt, unsigned int tNBatch, 
   //Renew parameters
   if ((tNBatch != NBatch) && (tSize != fid_size) ){
     theIntegratedProcessor = dsp::IntegratedProcessor(tNBatch,tSize);
+//    theProcessor = dsp::Processor(tNBatch,tSize);
   }
   NBatch = tNBatch;
   fid_size = tSize;;
@@ -183,7 +184,7 @@ void Fid::Init(std::string Option)
 	psd_, phi_ , env_,
 	i_wf_,f_wf_, max_idx_fft_,i_fft_,f_fft_, 
 	max_amp_,health_,freq_array_,freq_err_array_,fit_parameters_,res_);
-    std::cout <<"AAAAAAAAAA"<<std::endl;
+    std::cout <<"Initialization Done"<<std::endl;
     unsigned int NPar = fit_parameters_[0].size();
     for (unsigned int i=0 ; i<NBatch; i++){
       // Now set up the polynomial phase fit

@@ -15,35 +15,15 @@
 #include <cassert>
 #include <chrono>
 
-typedef struct _cb_params{
-  double scale;
-} cb_params;
-
 // Complex scale
+/*
 static __device__ __host__ inline cufftDoubleComplex DoubleComplexScale(cufftDoubleComplex a, double s)
 {
   cufftDoubleComplex c;
   c.x = s * a.x;
   c.y = s * a.y;
   return c;
-}
-
-//Callback routine for fft
-static __device__ void ComplexPointwiseScale(void *a, size_t index, cufftDoubleComplex element , void *cb_info, void *sharedmem)
-{
-  cb_params * my_params = (cb_params *)cb_info;
-  ((cufftDoubleComplex *)a)[index] = DoubleComplexScale(element,my_params->scale/4.0);
-}
-
-__device__ cufftCallbackStoreZ FFTCallbackPtr = ComplexPointwiseScale;
-
-static __device__ void PointwiseScale(void *a, size_t index, cufftDoubleReal element , void *cb_info, void *sharedmem)
-{
-  cb_params * my_params = (cb_params *)cb_info;
-  ((cufftDoubleReal *)a)[index] = element * my_params->scale / 4.0;
-}
-
-__device__ cufftCallbackStoreD Real_FFTCallbackPtr = PointwiseScale;
+}*/
 
 //Vector transform functors
 struct ScaleShift
@@ -295,20 +275,14 @@ int linearSolverCHOL(
 
 namespace dsp {
 
+//Vec
 std::vector<double>& VecAdd(std::vector<double>& a, std::vector<double>& b)
 {
   assert(a.size() == b.size());
-  static unsigned int N = 1000;
-  static thrust::device_vector<double> d_input1(N);
-  static thrust::device_vector<double> d_input2(N);
-  static thrust::device_vector<double> d_output(N);
-
-  if (a.size()!=N){
-    N = a.size();
-    d_input1.resize(N,0.0);
-    d_input2.resize(N,0.0);
-    d_output.resize(N,0.0);
-  }
+  unsigned int N = a.size();
+  thrust::device_vector<double> d_input1(N);
+  thrust::device_vector<double> d_input2(N);
+  thrust::device_vector<double> d_output(N);
 
   //transform(a.begin(), a.end(), b.begin(), a.begin(), std::plus<double>());
   //Assign thrust vectors
@@ -325,17 +299,11 @@ std::vector<double>& VecAdd(std::vector<double>& a, std::vector<double>& b)
 std::vector<double>& VecSubtract(std::vector<double>& a, std::vector<double>& b)
 {
   assert(a.size() == b.size());
-  static unsigned int N = 1000;
-  static thrust::device_vector<double> d_input1(N);
-  static thrust::device_vector<double> d_input2(N);
-  static thrust::device_vector<double> d_output(N);
 
-  if (a.size()!=N){
-    N = a.size();
-    d_input1.resize(N,0.0);
-    d_input2.resize(N,0.0);
-    d_output.resize(N,0.0);
-  }
+  unsigned int N = a.size();
+  thrust::device_vector<double> d_input1(N);
+  thrust::device_vector<double> d_input2(N);
+  thrust::device_vector<double> d_output(N);
 
   //transform(a.begin(), a.end(), b.begin(), a.begin(), std::minus<double>());
   //Assign thrust vectors
@@ -351,25 +319,26 @@ std::vector<double>& VecSubtract(std::vector<double>& a, std::vector<double>& b)
 
 std::vector<double>& VecScale(double c, std::vector<double>& a)
 {
-  static unsigned int N = 1000;
-  static thrust::device_vector<double> d_input(N);
-  static thrust::device_vector<double> d_output(N);
 
+  unsigned int N = a.size();
+  thrust::device_vector<double> d_input1(N);
+  thrust::device_vector<double> d_output(N);
+/*
   if (a.size()!=N){
     N = a.size();
-    d_input.resize(N,0.0);
+    d_input1.resize(N,0.0);
     d_output.resize(N,0.0);
-  }
+  }*/
   /*
   for (auto it = a.begin(); it != a.end(); ++it){
     *it = c * (*it);
   }*/
 
   //Assign thrust vectors
-  thrust::copy(a.begin(),a.end(),d_input.begin());
+  thrust::copy(a.begin(),a.end(),d_input1.begin());
 
   // Calculate the modulo-ed phase
-  thrust::transform(d_input.begin(), d_input.end(), d_output.begin(),ScaleShift(c,0.0));
+  thrust::transform(d_input1.begin(), d_input1.end(), d_output.begin(),ScaleShift(c,0.0));
 
   thrust::copy(d_output.begin(),d_output.end(),a.begin());
   return a;
@@ -377,237 +346,43 @@ std::vector<double>& VecScale(double c, std::vector<double>& a)
 
 std::vector<double>& VecShift(double c, std::vector<double>& a)
 {
-  static unsigned int N = 1000;
-  static thrust::device_vector<double> d_input(N);
-  static thrust::device_vector<double> d_output(N);
-
-  if (a.size()!=N){
+  unsigned int N = a.size();
+  thrust::device_vector<double> d_input1(N);
+  thrust::device_vector<double> d_output(N);
+  /*if (a.size()!=N){
     N = a.size();
-    d_input.resize(N,0.0);
+    d_input1.resize(N,0.0);
     d_output.resize(N,0.0);
-  }
+  }*/
   /*
   for (auto it = a.begin(); it != a.end(); ++it){
     *it = c + (*it);
   }*/
 
   //Assign thrust vectors
-  thrust::copy(a.begin(),a.end(),d_input.begin());
+  thrust::copy(a.begin(),a.end(),d_input1.begin());
 
   // Calculate the modulo-ed phase
-  thrust::transform(d_input.begin(), d_input.end(), d_output.begin(),ScaleShift(1.0,c));
+  thrust::transform(d_input1.begin(), d_input1.end(), d_output.begin(),ScaleShift(1.0,c));
 
   thrust::copy(d_output.begin(),d_output.end(),a.begin());
   return a;
 }
 
-double VecChi2(std::vector<double>& a){
-  static unsigned int N = 1000;
-  static thrust::device_vector<double> d_input(N);
+double Chi2(std::vector<double>& a){
 
-  if (a.size()!=N){
+  unsigned int N = a.size();
+  thrust::device_vector<double> d_input1(N);
+  thrust::device_vector<double> d_output(N);
+  /*if (a.size()!=N){
     N = a.size();
-    d_input.resize(N,0.0);
-  }
+    d_input1.resize(N,0.0);
+  }*/
 
   //Assign thrust vectors
-  thrust::copy(a.begin(),a.end(),d_input.begin());
+  thrust::copy(a.begin(),a.end(),d_input1.begin());
 
-  return thrust::transform_reduce (d_input.begin(),d_input.end(),Square(),0.0,thrust::plus<double>());
-}
-
-//FFT
-
-std::vector<cdouble> ifft(const std::vector<cdouble>& v)
-{
-  static cufftHandle plan;
-  static int FFTSize = 0;
-  // Grab some useful constants.
-  int N = v.size();
-  double Nroot = std::sqrt(N);
-
-  //CUDA FFT
-  // Instantiate the result vector.
-  std::vector<cdouble> wfm_vec(N, cdouble(0.0, 0.0));
-  const int batch = 1;
-  cufftDoubleComplex *d_data;
-  const cufftDoubleComplex *h_data = reinterpret_cast<const cufftDoubleComplex *>(&v[0]);
-  cufftDoubleComplex *h_data_res =  reinterpret_cast<cufftDoubleComplex *>(&wfm_vec[0]);
-
-  if (FFTSize != N){
-    // Define a structure used to pass in the device address of the scale factor
-    cb_params h_params;
-
-    h_params.scale = Nroot;
-
-    // Allocate device memory for parameters
-    cb_params *d_params;
-    cudaMalloc((void **)&d_params, sizeof(cb_params));
-
-    // Copy host memory to device
-    cudaMemcpy(d_params, &h_params, sizeof(cb_params),cudaMemcpyHostToDevice);
-
-    // The host needs to get a copy of the device pointer to the callback
-    cufftCallbackStoreZ hostCopyOfCallbackPtr;
-
-    cudaMemcpyFromSymbol(&hostCopyOfCallbackPtr,FFTCallbackPtr,sizeof(hostCopyOfCallbackPtr));
-
-    cufftPlan1d(&plan, N, CUFFT_Z2Z, batch);
-
-    //Set Callback
-//    cufftXtSetCallback(plan,(void **)&hostCopyOfCallbackPtr,CUFFT_CB_ST_COMPLEX_DOUBLE,(void **)&d_params);
-
-    FFTSize = N;
-  }
-
-  cudaMalloc((void **)&d_data, sizeof(cufftDoubleComplex) * N);
-
-  cudaMemcpy(d_data, h_data, sizeof(cufftDoubleComplex) * N, cudaMemcpyHostToDevice);
-  cufftExecZ2Z(plan, d_data, d_data, CUFFT_INVERSE);
-  cudaMemcpy(h_data_res, d_data, sizeof(cufftDoubleComplex) * N, cudaMemcpyDeviceToHost);
-
-  cudaFree(d_data);
-
-  // cudafft is unnormalized, so we need to fix that.
-  for (auto it = wfm_vec.begin(); it != wfm_vec.end(); ++it) {
-    *it /= Nroot;
-  }
-
-  return wfm_vec;
-}
-
-std::vector<cdouble> rfft(const std::vector<double> &v)
-{
-  static cufftHandle plan;
-  static int FFTSize = 0;
-  //Test Time cost
-//  auto t0 = std::chrono::high_resolution_clock::now();
-  // Grab some useful constants.
-  int N = v.size();  
-  int n = N / 2 + 1;  // size of rfft
-  double Nroot = std::sqrt(N);
-
-  //CUDA FFT
-  // Instantiate the result vector.
-  std::vector<cdouble> fft_vec(n, cdouble(0.0, 0.0));
-  const int batch = 1;
-  cufftDoubleReal *d_data;
-  cufftDoubleComplex *d_data_res;
-  const cufftDoubleReal *h_data = reinterpret_cast<const cufftDoubleReal *>(&v[0]);
-  cufftDoubleComplex *h_data_res =  reinterpret_cast<cufftDoubleComplex *>(&fft_vec[0]);
-
-  if (FFTSize != N){
-    // Define a structure used to pass in the device address of the scale factor
-    cb_params h_params;
-
-    h_params.scale = Nroot;
-
-    // Allocate device memory for parameters
-    cb_params *d_params;
-    cudaMalloc((void **)&d_params, sizeof(cb_params));
-
-    // Copy host memory to device
-    cudaMemcpy(d_params, &h_params, sizeof(cb_params),cudaMemcpyHostToDevice);
-
-    // The host needs to get a copy of the device pointer to the callback
-    cufftCallbackStoreZ hostCopyOfCallbackPtr;
-
-    cudaMemcpyFromSymbol(&hostCopyOfCallbackPtr,FFTCallbackPtr,sizeof(hostCopyOfCallbackPtr));
-
-    cufftPlan1d(&plan, N, CUFFT_D2Z, batch);
-    //Set Callback
-//    cufftXtSetCallback(plan,(void **)&hostCopyOfCallbackPtr,CUFFT_CB_ST_COMPLEX_DOUBLE,(void **)&d_params);
-
-    FFTSize = N;
-  }
-
-  cudaMalloc((void **)&d_data, sizeof(cufftDoubleReal) * N);
-  cudaMalloc((void **)&d_data_res, sizeof(cufftDoubleComplex) * n);
-
-  cudaMemcpy(d_data, h_data, sizeof(cufftDoubleReal) * N, cudaMemcpyHostToDevice);
-  cufftExecD2Z(plan, d_data, d_data_res);
-  //renormalize
-  dim3 DimBlock (16);
-  dim3 DimGrid (N/16+1);
-  ComplexScale<<<DimGrid, DimBlock>>>(1/Nroot,d_data_res,N);
-
-  cudaMemcpy(h_data_res, d_data_res, sizeof(cufftDoubleComplex) * n, cudaMemcpyDeviceToHost);
-
-  cudaFree(d_data);
-  cudaFree(d_data_res);
-
-  /*for (auto it = fft_vec.begin(); it != fft_vec.end(); ++it) {
-    *it /= Nroot;
-  }*/
-
- /* auto t1 = std::chrono::high_resolution_clock::now();
-  auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
-  double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
-  std::cout << "Time = "<<t<<std::endl;
-  */
-  return fft_vec;
-}
-
-
-std::vector<double> irfft(const std::vector<cdouble>& fft, bool is_odd)
-{
-  static cufftHandle plan;
-  static int FFTSize = 0;
-  // Grab some useful constants.
-  int n = fft.size();
-  int N = 2 * (n - 1) + 1 * is_odd;
-  double Nroot = std::sqrt(N);
-
-  //CUDA FFT
-  // Instantiate the result vector.
-  std::vector<double> wfm_vec(N, 0.0);
-  const int batch = 1;
-  cufftDoubleComplex *d_data;
-  cufftDoubleReal *d_data_res;
-  const cufftDoubleComplex *h_data = reinterpret_cast<const cufftDoubleComplex *>(&fft[0]);
-  cufftDoubleReal *h_data_res =  reinterpret_cast<cufftDoubleReal *>(&wfm_vec[0]);
-
-  if (FFTSize != N){
-    // Define a structure used to pass in the device address of the scale factor
-    cb_params h_params;
-
-    h_params.scale = Nroot;
-
-    // Allocate device memory for parameters
-    cb_params *d_params;
-    cudaMalloc((void **)&d_params, sizeof(cb_params));
-
-    // Copy host memory to device
-    cudaMemcpy(d_params, &h_params, sizeof(cb_params),cudaMemcpyHostToDevice);
-
-    // The host needs to get a copy of the device pointer to the callback
-    cufftCallbackStoreZ hostCopyOfCallbackPtr;
-
-    cudaMemcpyFromSymbol(&hostCopyOfCallbackPtr,Real_FFTCallbackPtr,sizeof(hostCopyOfCallbackPtr));
-
-    cufftPlan1d(&plan, N, CUFFT_Z2D, batch);
-    //Set Callback
-//    cufftXtSetCallback(plan,(void **)&hostCopyOfCallbackPtr,CUFFT_CB_ST_REAL_DOUBLE,(void **)&d_params);
-
-    FFTSize = N;
-  }
-
-  cudaMalloc((void **)&d_data, sizeof(cufftDoubleComplex) * n);
-  cudaMalloc((void **)&d_data_res, sizeof(cufftDoubleReal) * N);
-  
-  cudaMemcpy(d_data, h_data, sizeof(cufftDoubleComplex) * n, cudaMemcpyHostToDevice);
-  cufftExecZ2D(plan, d_data, d_data_res);
-  cudaMemcpy(h_data_res, d_data_res, sizeof(cufftDoubleReal) * N, cudaMemcpyDeviceToHost);
-
-  cudaFree(d_data);
-  cudaFree(d_data_res);
-  // cufft is unnormalized, so we need to fix that.
-/*  for (auto it = wfm_vec.begin(); it != wfm_vec.end(); ++it) {
-  	*it /= Nroot;
-  }*/
-  VecScale(1/Nroot, wfm_vec);
-
-  return wfm_vec;
+  return thrust::transform_reduce (d_input1.begin(),d_input1.end(),Square(),0.0,thrust::plus<double>());
 }
 
 std::vector<double> norm(const std::vector<double>& v)
@@ -678,9 +453,148 @@ std::vector<double> norm(const std::vector<cdouble>& v)
   return res;
 }
 
+//FFT
+
+std::vector<cdouble> Processor::ifft(const std::vector<cdouble>& v,unsigned int N, unsigned int NBatch)
+{
+  // Grab some useful constants.
+  assert(v.size() == N*NBatch);
+  double Nroot = std::sqrt(N);
+
+  thrust::device_vector<thrust::complex<double>> d_input_z(N*NBatch);
+  thrust::device_vector<thrust::complex<double>> d_output_z(N*NBatch);
+
+  if ( FFTSize != N || batch != NBatch){
+    ResetPlan(N,batch);
+  }
+
+  //CUDA FFT
+  // Instantiate the result vector.
+  std::vector<cdouble> wfm_vec(N*NBatch, cdouble(0.0, 0.0));
+  const cufftDoubleComplex *h_data = reinterpret_cast<const cufftDoubleComplex *>(&v[0]);
+  cufftDoubleComplex *h_data_res =  reinterpret_cast<cufftDoubleComplex *>(&wfm_vec[0]);
+
+  cufftDoubleComplex *d_data = (cuDoubleComplex*)thrust::raw_pointer_cast(d_input_z.data());
+
+  cudaMemcpy(d_data, h_data, sizeof(cufftDoubleComplex) * N*NBatch, cudaMemcpyHostToDevice);
+  cufftExecZ2Z(planZ2Z, d_data, d_data, CUFFT_INVERSE);
+  cudaMemcpy(h_data_res, d_data, sizeof(cufftDoubleComplex) * N*NBatch, cudaMemcpyDeviceToHost);
+
+  // cudafft is unnormalized, so we need to fix that.
+  for (auto it = wfm_vec.begin(); it != wfm_vec.end(); ++it) {
+    *it /= Nroot;
+  }
+
+  return wfm_vec;
+}
+
+std::vector<cdouble> Processor::rfft(const std::vector<double> &v,unsigned int N, unsigned int NBatch)
+{
+  //Test Time cost
+  // Grab some useful constants.
+  assert(v.size() == N*NBatch);
+  unsigned int n = N / 2 + 1;  // size of rfft
+  double Nroot = std::sqrt(N);
+
+  thrust::device_vector<double> d_input_d(N*NBatch);
+  thrust::device_vector<thrust::complex<double>> d_output_z(n*NBatch);
+
+  if ( FFTSize != N || batch != NBatch){
+    ResetPlan(N,batch);
+  }
+
+  //CUDA FFT
+  // Instantiate the result vector.
+  std::vector<cdouble> fft_vec(n, cdouble(0.0, 0.0));
+  cufftDoubleReal *d_data = (cufftDoubleReal*)thrust::raw_pointer_cast(d_input_d.data());
+  cufftDoubleComplex *d_data_res = (cuDoubleComplex*)thrust::raw_pointer_cast(d_output_z.data());
+  const cufftDoubleReal *h_data = reinterpret_cast<const cufftDoubleReal *>(&v[0]);
+  cufftDoubleComplex *h_data_res =  reinterpret_cast<cufftDoubleComplex *>(&fft_vec[0]);
+
+  cudaMemcpy(d_data, h_data, sizeof(cufftDoubleReal) * N*NBatch, cudaMemcpyHostToDevice);
+  cufftExecD2Z(planD2Z, d_data, d_data_res);
+  //renormalize
+  dim3 DimBlock (16);
+  dim3 DimGrid (n*NBatch/16+1);
+  ComplexScale<<<DimGrid, DimBlock>>>(1/Nroot,d_data_res,n*NBatch);
+
+  cudaMemcpy(h_data_res, d_data_res, sizeof(cufftDoubleComplex) * n*NBatch, cudaMemcpyDeviceToHost);
+
+  /*for (auto it = fft_vec.begin(); it != fft_vec.end(); ++it) {
+    *it /= Nroot;
+  }*/
+
+ /* auto t1 = std::chrono::high_resolution_clock::now();
+  auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
+  double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
+  std::cout << "Time = "<<t<<std::endl;
+  */
+  return fft_vec;
+}
+
+//std::vector<double> Processor::irfft(const std::vector<cdouble>& fft, bool is_odd,unsigned int n, unsigned int NBatch)
+std::vector<double> Processor::irfft(const std::vector<cdouble>& fft, unsigned int N, unsigned int NBatch)
+{
+  // Grab some useful constants.
+  unsigned int n = N / 2 + 1;  // size of rfft
+  assert(fft.size() == n*NBatch);
+  double Nroot = std::sqrt(N);
+
+  thrust::device_vector<thrust::complex<double>> d_input_z(n*NBatch);
+  thrust::device_vector<double> d_output_d(N*NBatch);
+
+  if ( FFTSize != N || batch != NBatch){
+    ResetPlan(N,batch);
+  }
+
+  //CUDA FFT
+  // Instantiate the result vector.
+  std::vector<double> wfm_vec(N*NBatch, 0.0);
+  cufftDoubleComplex *d_data = (cuDoubleComplex*)thrust::raw_pointer_cast(d_input_z.data());
+  cufftDoubleReal *d_data_res = (cufftDoubleReal*)thrust::raw_pointer_cast(d_output_d.data());
+  const cufftDoubleComplex *h_data = reinterpret_cast<const cufftDoubleComplex *>(&fft[0]);
+  cufftDoubleReal *h_data_res =  reinterpret_cast<cufftDoubleReal *>(&wfm_vec[0]);
+
+  cudaMemcpy(d_data, h_data, sizeof(cufftDoubleComplex) * n*NBatch, cudaMemcpyHostToDevice);
+  cufftExecZ2D(planZ2D, d_data, d_data_res);
+  cudaMemcpy(h_data_res, d_data_res, sizeof(cufftDoubleReal) * N*NBatch, cudaMemcpyDeviceToHost);
+
+  // cufft is unnormalized, so we need to fix that.
+/*  for (auto it = wfm_vec.begin(); it != wfm_vec.end(); ++it) {
+  	*it /= Nroot;
+  }*/
+  VecScale(1/Nroot, wfm_vec);
+
+  return wfm_vec;
+}
+
+std::vector<double> Processor::hilbert(const std::vector<double>& v ,unsigned int N, unsigned int NBatch)
+{
+  // Return the call to the fft version.
+  auto fft_vec = rfft(v,N,NBatch);
+
+  // Zero out the constant term.
+  fft_vec[0] = cdouble(0.0, 0.0);
+
+  // Multiply in the -i.
+  for (auto it = fft_vec.begin() + 1; it != fft_vec.end(); ++it) {
+    *it = cdouble((*it).imag(), -(*it).real());
+  }
+
+
+  // Reverse the fft.
+  return irfft(fft_vec, N,NBatch);
+}
+
+std::vector<double> Processor::psd(const std::vector<cdouble>& v)
+{
+  return norm(v); 
+}
+
+
 //Window Filter
 
-std::vector<cdouble> window_filter(const std::vector<cdouble>& spectrum, const std::vector<double>& freq, double low, double high)
+std::vector<cdouble> Processor::window_filter(const std::vector<cdouble>& spectrum, const std::vector<double>& freq, double low, double high,unsigned int N, unsigned int NBatch)
 {
   auto output = spectrum;
   auto interval = freq[1] - freq[0];
@@ -695,25 +609,12 @@ std::vector<cdouble> window_filter(const std::vector<cdouble>& spectrum, const s
 }
 
 // Calculates the phase by assuming the real signal is harmonic.
-std::vector<double> phase(const std::vector<double>& v)
+std::vector<double> Processor::phase(const std::vector<double>& wf_re, const std::vector<double>& wf_im,unsigned int N, unsigned int NBatch)
 {
-	return phase(v, hilbert(v));
-}
+  thrust::device_vector<double> d_wf_re(N*NBatch);
+  thrust::device_vector<double> d_wf_im(N*NBatch);
+  thrust::device_vector<double> d_phase(N*NBatch);
 
-std::vector<double> phase(const std::vector<double>& wf_re, 
-                               const std::vector<double>& wf_im)
-{
-  static unsigned int N = 1000;
-  static thrust::device_vector<double> d_wf_re(N);
-  static thrust::device_vector<double> d_wf_im(N);
-  static thrust::device_vector<double> d_phase(N);
-
-  if (wf_re.size()!=N){
-    N = wf_re.size();
-    d_wf_re.resize(N,0.0);
-    d_wf_im.resize(N,0.0);
-    d_phase.resize(N,0.0);
-  }
   // Set the phase vector
   std::vector<double> phase(wf_re.size(), 0.0);
 
@@ -776,26 +677,15 @@ std::vector<double> phase(const std::vector<double>& wf_re,
   return phase;
 }
 
-std::vector<double> envelope(const std::vector<double>& v)
+std::vector<double> Processor::envelope(const std::vector<double>& wf_re, const std::vector<double>& wf_im)
 {
-	return envelope(v, hilbert(v));
-}
+  unsigned int N = wf_re.size();
+  thrust::device_vector<double> d_wf_re(N);
+  thrust::device_vector<double> d_wf_im(N);
+  thrust::device_vector<double> d_env(N);
 
-std::vector<double> envelope(const std::vector<double>& wf_re, const std::vector<double>& wf_im)
-{
-  static unsigned int N = 1000;
-  static thrust::device_vector<double> d_wf_re(N);
-  static thrust::device_vector<double> d_wf_im(N);
-  static thrust::device_vector<double> d_env(N);
-
-  if (wf_re.size()!=N){
-    N = wf_re.size();
-    d_wf_re.resize(N,0.0);
-    d_wf_im.resize(N,0.0);
-    d_env.resize(N,0.0);
-  }
   // Set the envelope function
-  std::vector<double> env(wf_re.size(), 0.0);
+  std::vector<double> env(N, 0.0);
 
  /* 	std::transform(wf_re.begin(), wf_re.end(), wf_im.begin(), env.begin(),
 	[](double r, double i) { return std::sqrt(r*r + i*i); });
@@ -810,6 +700,41 @@ std::vector<double> envelope(const std::vector<double>& wf_re, const std::vector
   thrust::copy(d_env.begin(),d_env.end(),env.begin());
 
   return env;
+}
+
+// Helper function to get frequencies for FFT
+std::vector<double> fftfreq(const std::vector<double>& tm) 
+{
+	int N = tm.size();
+	double dt = (tm[N-1] - tm[0]) / (N - 1); // sampling rate
+
+	return fftfreq(N, dt);
+}
+
+std::vector<double> fftfreq(const int N, const double dt)
+{
+	// Instantiate return vector.
+	std::vector<double> freq;
+
+	// Handle both even and odd cases properly.
+	if (N % 2 == 0) {
+
+		freq.resize(N/2 + 1);
+		
+		for (unsigned int i = 0; i < freq.size(); ++i) {
+			freq[i] = i / (dt * N);
+		}
+
+	} else {
+
+		freq.resize((N + 1) / 2);
+
+		for (unsigned int i = 0; i < freq.size(); ++i){
+			freq[i] = i / (dt * N);
+		}
+	}
+
+	return freq;
 }
 
 int convolve(const std::vector<double>& v, const std::vector<double>& filter, std::vector<double>& res)
@@ -875,8 +800,8 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
     if (ParLists[i].size() != NPar) ParLists[i].resize(NPar);
   }
 
-  Res.resize(x.size());
-  VecScale(0.0,Res);
+  Res = std::vector<double>(x.size(),0.0);
+  //VecScale(0.0,Res);
   //minimize |Ax - b| 
   //const double * Vb = reinterpret_cast<const double *>(&y[i_idx]);
   //const double * Vdata = reinterpret_cast<const double *>(&x[i_idx]);
@@ -1507,100 +1432,10 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   thrust::copy(d_i_fft.begin(),d_i_fft.end(),i_fft.begin());
   thrust::copy(d_f_fft.begin(),d_f_fft.end(),f_fft.begin());
 
-  //this is in host
-  /*
-  for(unsigned int j=0;j<NBatch;j++)
-  {
-    max_idx_fft[j]=std::distance(psd.begin()+j*m,std::max_element(psd.begin()+j*m+1,psd.begin()+(j+1)*m));
-    if(max_idx_fft[j]<=fft_peak_index_width) i_fft[j]=1;
-    else i_fft[j]=max_idx_fft[j]-fft_peak_index_width;
-    
-    f_fft[j]=max_idx_fft[j]+fft_peak_index_width;
-    if(f_fft[j]>m) f_fft[j]=m;
-  }*/
   auto t3 = std::chrono::high_resolution_clock::now();
   auto dtn3 = t3.time_since_epoch() - t2.time_since_epoch();
   double dt3 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn3).count();
   std::cout << "Time for finding ranges = "<<dt3<<std::endl;
-  //CalcNoise*******************************************************
-  //maybe we have use these parameters before
-  /*
-  std::cout <<"BBBBBBBBBBBBBB"<<std::endl;
-  int start=edge_ignore/(tm[1]-tm[0]);
-  int end=edge_width/(tm[1]-tm[0])+start;
-  //stdev-------GPUversion
-  //mean of each vector
-  
-  thrust::device_vector<double> mean1(NBatch);
-  thrust::device_vector<double> mean2(NBatch);
-  //!!!!!!!!!!!!!!Something weird with the label here
-  for(unsigned int i=0; i<NBatch;i++)
-  {
-    mean1[i]=thrust::reduce(d_filtered_wf.begin()+i*(Length)+start,d_filtered_wf.begin()+i*(Length)+end,0)/Length;
-  }
-  for(unsigned int i=0; i<NBatch;i++)
-  {
-    mean2[i]=thrust::reduce(d_filtered_wf.rbegin()+i*Length+start,d_filtered_wf.rbegin()+i*Length+end,0)/Length;
-  }
-  
-  //structure of shift and square
-  //struct varianceshiftop
-  //{ 
-  //varianceshiftop(double m):mean(m)
-  //const double mean;
-  //__device__ double oprerator()(double data) const 
-  //{
-  //return::pow(data-mean,2.0);
-  //}
-  //}
-  //noise of each vector
-  std::cout <<"CCCCCCCCCCCCCC"<<std::endl;
-  
-  thrust::device_vector<double> head(NBatch);
-  thrust::device_vector<double> tail(NBatch);
-  for(unsigned int i=0;i<NBatch;i++)
-  {
-    head[i]=thrust::transform_reduce(d_filtered_wf.begin()+i*(Length)+start,d_filtered_wf.begin()+i*(Length)+end,varianceshiftop(mean1[i]),0.0,thrust::plus<double>());
-  }
-  for(unsigned int i=0;i<NBatch;i++)
-  {
-    tail[i]=thrust::transform_reduce(d_filtered_wf.begin()+i*(Length)+start,d_filtered_wf.begin()+i*(Length)+(end),varianceshiftop(mean2[i]),0.0,thrust::plus<double>());
-  }
-  //final result of each vector
-  thrust::device_vector<double> d_noise(NBatch);
-  //structure of compare
-  //struct compare
-  //{ 
-  //compare(){}
-  //__device__ double oprerator()(double x, double y); 
-  //{
-  //if(x>y)
-  //{
-  //return x;
-  //}
-  //else
-  //{
-  //return y;
-  //}
-  //}
-  //}
-  thrust::transform(head.begin(),head.end(),tail.begin(),d_noise.begin(),compare());
-  //structure of Sqrt
-  //struct Sqrt
-  //{ 
-  //Sqrt(){}
-  //__device__ double oprerator()(double x); 
-  //{
-  //return sqrt(x);
-  //}
-  thrust::transform(d_noise.begin(),d_noise.end(),d_noise.begin(),Sqrt());
- 
-  std::cout <<"DDDDDDDDDDDDDD"<<std::endl;
-*/
-  auto t4 = std::chrono::high_resolution_clock::now();
-  auto dtn4 = t4.time_since_epoch() - t3.time_since_epoch();
-  double dt4 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn4).count();
-  std::cout << "Time for noise = "<<dt4<<std::endl;
 
   //Fit phase to linear functions
   /*for(unsigned int j=0;j<NBatch;j++)
@@ -1608,10 +1443,10 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
     linear_fit(tm,phi, j*Length+iwf[j], j*Length+fwf[j] , NFitPar, FitPars[j], ResidualOut);
   }*/
   linear_fit(tm,phi, iwf, fwf , NFitPar,NBatch,Length, FitPars, ResidualOut);
-  auto t5 = std::chrono::high_resolution_clock::now();
-  auto dtn5 = t5.time_since_epoch() - t4.time_since_epoch();
-  double dt5 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn5).count();
-  std::cout << "Time for fit = "<<dt5<<std::endl;
+  auto t4 = std::chrono::high_resolution_clock::now();
+  auto dtn4 = t4.time_since_epoch() - t3.time_since_epoch();
+  double dt4 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn4).count();
+  std::cout << "Time for fit = "<<dt4<<std::endl;
   return 0;
 }
 
@@ -1672,68 +1507,6 @@ void addwhitenoise(std::vector<double>& v, double snr) {
   for (auto &x : v){
     x += nrm(gen) * scale;
   }
-}
-
-std::vector<double> hilbert(const std::vector<double>& v)
-{
-	// Return the call to the fft version.
-	auto fft_vec = rfft(v);
-
-  // Zero out the constant term.
-  fft_vec[0] = cdouble(0.0, 0.0);
-
-  // Multiply in the -i.
-  for (auto it = fft_vec.begin() + 1; it != fft_vec.end(); ++it) {
-    *it = cdouble((*it).imag(), -(*it).real());
-  }
-
-
-  // Reverse the fft.
-  return irfft(fft_vec, v.size() % 2 == 1);
-}
-
-std::vector<double> psd(const std::vector<double>& v)
-{
-  // Perform fft on the original data.
-	auto fft_vec = rfft(v);
-
-  // Get the norm of the fft as that is the power.
-	return norm(fft_vec);
-}
-
-// Helper function to get frequencies for FFT
-std::vector<double> fftfreq(const std::vector<double>& tm) 
-{
-	int N = tm.size();
-	double dt = (tm[N-1] - tm[0]) / (N - 1); // sampling rate
-
-	return fftfreq(N, dt);
-}
-
-std::vector<double> fftfreq(const int N, const double dt)
-{
-	// Instantiate return vector.
-	std::vector<double> freq;
-
-	// Handle both even and odd cases properly.
-	if (N % 2 == 0) {
-
-		freq.resize(N/2 + 1);
-		
-		for (unsigned int i = 0; i < freq.size(); ++i) {
-			freq[i] = i / (dt * N);
-		}
-
-	} else {
-
-		freq.resize((N + 1) / 2);
-
-		for (unsigned int i = 0; i < freq.size(); ++i){
-			freq[i] = i / (dt * N);
-		}
-	}
-
-	return freq;
 }
 
 /*

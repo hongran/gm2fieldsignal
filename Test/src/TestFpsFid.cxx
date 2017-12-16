@@ -174,6 +174,7 @@ int main(int argc,char ** argv){
 */
 
   TGraph * gPhiFit[400];
+  TGraph * gWfView[400];
   TF1 FitFunc[400];
   for (unsigned int j=0;j<NBatch;j++){
     gPhiFit[j] = new TGraph();
@@ -181,13 +182,18 @@ int main(int argc,char ** argv){
     for (unsigned int i=0;i<fid_size;i++){
       gPhiFit[j]->SetPoint(i,tm[j*fid_size+i],Phi[j*fid_size+i]);
     }
+    gWfView[j] = new TGraph();
+    gWfView[j]->SetName(Form("Wf%d",j));
+    for (unsigned int i=0;i<fid_size;i++){
+      gWfView[j]->SetPoint(i,tm[j*fid_size+i],Wf_filter[j*fid_size+i]);
+    }
     FitFunc[j] = myFid.f_fit(j);
   }
 
 
 
   TFile * FileOut = new TFile("TestOut.root","recreate");
-  gWf->Write();
+//  gWf->Write();
   gPsd->Write();
   gBaseline->Write();
   gWf_corrected->Write();
@@ -199,6 +205,7 @@ int main(int argc,char ** argv){
  // gRes->Write();
   for (unsigned int j=0;j<NBatch;j++){
     gPhiFit[j]->Write();
+    gWfView[j]->Write();
     FitFunc[j].Write();
   }
   FileOut->Close();
