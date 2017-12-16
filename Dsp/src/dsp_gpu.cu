@@ -188,10 +188,13 @@ int linearSolverCHOL(
     const double * total_matrix,
     int lda,
     const double * d_b,
-    const int NBatch
+    const int NBatch,
     double *d_Parlists
     )
 {
+  cudaError_t cudaStatus;
+cusolverStatus_t status;
+
  // int bufferSize = 0;
   int *info = NULL;
   //double *buffer = NULL;
@@ -212,13 +215,13 @@ int linearSolverCHOL(
   //find Matrix_pointer and Par_pointer
  thrust::device_vector<double *> Matrix_pointer(NBatch);
  thrust::device_vector<double *> Par_pointer(NBatch);
-for(i=0;i<NBatch;i++)
+for(unsigned int i=0;i<NBatch;i++)
 {
 Matrix_pointer[i]=&total_matrix[i*n*n];
 Par_pointer[i]=&d_Parlists[i*n];
 }
 //LU
-double **matrix_pointer=reinterpret_cast<double *>(&Matrix_Pointer[0]);
+double **matrix_pointer=reinterpret_cast<double **>(&Matrix_pointer[0]);
   cusolverDnDpotrfBatched(handle, uplo, n, Matrix_pointer, lda, info, NBatch);
 /*
   cudaMemcpy(h_info, info, NBatch*sizeof(int), cudaMemcpyDeviceToHost);
@@ -232,13 +235,12 @@ for(i=0;i<NBatch;i++)
 */
  // cudaMemcpy(x, b, sizeof(double)*n, cudaMemcpyDeviceToDevice)
 
-double **par_pointer=reinterpret_cast<double *>(Par_pointer[0]);
+double **par_pointer=reinterpret_cast<double **>(Par_pointer[0]);
   cusolverDnDpotrsBatched(handle, uplo, n, 1, matrix_pointer, lda, par_pointer, lda,&info[0],NBatch);
 
   cudaDeviceSynchronize();
 
    cudaFree(info); 
-   cudaFree(buffer);
    cudaFree(A);
 
   return 0;
@@ -886,21 +888,21 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
   cudaMemcpy(d_res, d_b, NBatch*Length*sizeof(double), cudaMemcpyDeviceToDevice);
   cudaMemcpy(d_data, Vdata, NBatch*Length*sizeof(double), cudaMemcpyHostToDevice);
 //save total parameters
-thrust::device_vector<double> d_Parlists(Nbatch*NPar);
+thrust::device_vector<double> d_Parlists(NBatch*NPar);
 //save total b
 thrust::device_vector<double> d_total_b(NBatch*NPar);
 
 //save total matrix
-thrust::device_vector<doublle> total_matrix(NBatch*NPar*NPar);
+thrust::device_vector<double> total_matrix(NBatch*NPar*NPar);
 //make matrix
   for (unsigned int i=0;i<NBatch;i++){
     N_Eq[i] = f_idx[i] - i_idx[i];
-   double * d_rhh= reinterpret_cast<double>(d_total_b[i*NPar]); 
-   double * d_MM =reinterpret_cast<double>(total_matrix[i*NPar*NPar]);
+   const double * d_rhh= reinterpret_cast<double *>(&d_total_b[i*NPar]); 
+   const double * d_MM =reinterpret_cast<double *>(&total_matrix[i*NPar*NPar]);
     //Make Matrix A
     dim3 DimBlock (NPar,16);
     dim3 DimGrid (1, N_Eq/16+1);
-    MakeMatrix<<<DimGrid, DimBlock>>>(d_data,d_A+i*NPar*Length,NPar,N_Eq,i*Length+i_idx[i]);
+    MakeMatrix<<<DimGrid, DimBlock>>>(d_data,d_A+i*NPar*Length,NPar,N_Eq[i],i*Length+i_idx[i]);
 /*    auto t1 = std::chrono::high_resolution_clock::now();
     auto dtn1 = t1.time_since_epoch() - t0.time_since_epoch();
     double dt1 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn1).count();
