@@ -182,6 +182,29 @@ __global__ void ComplexScale(const double c,cufftDoubleComplex* a,size_t N)
   }
 }
 
+__global__ void initBatchIndentity(const int size, const int NBatch,double *x, double **y)
+{
+int i= blockDim.x * blockIdx.x + threadIdx.x;
+if ( i < NBatch )
+{
+ y[i]=&x[i*size*size];
+ for(unsigned int m=0; m<size; x++)
+{
+  for(unsigned int n=0;n<size;y++)
+  {
+   if(m==n)
+   {
+  x[i*size*size+m*size+n]=1;
+   }
+   else
+  {
+  x[i*size*size+m*size+n]=0; 
+  }  
+  }
+}
+}
+}
+
 int linearSolverCHOL(
     cusolverDnHandle_t handle,
     int n,
