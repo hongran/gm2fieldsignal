@@ -217,7 +217,8 @@ for(i=0;i<NBatch;i++)
 Matrix_pointer[i]=&total_matrix[i*n*n];
 Par_pointer[i]=&d_Parlists[i*n];
 }
-//LU 
+//LU
+double **matrix_pointer=reinterpret_cast<double *>(&Matrix_Pointer[0]);
   cusolverDnDpotrfBatched(handle, uplo, n, Matrix_pointer, lda, info, NBatch);
 /*
   cudaMemcpy(h_info, info, NBatch*sizeof(int), cudaMemcpyDeviceToHost);
@@ -230,7 +231,7 @@ for(i=0;i<NBatch;i++)
  }
 */
  // cudaMemcpy(x, b, sizeof(double)*n, cudaMemcpyDeviceToDevice)
-double **matrix_pointer=reinterpret_cast<double *>(&Matrix_Pointer[0]);
+
 double **par_pointer=reinterpret_cast<double *>(Par_pointer[0]);
   cusolverDnDpotrsBatched(handle, uplo, n, 1, matrix_pointer, lda, par_pointer, lda,&info[0],NBatch);
 
@@ -894,8 +895,8 @@ thrust::device_vector<doublle> total_matrix(NBatch*NPar*NPar);
 //make matrix
   for (unsigned int i=0;i<NBatch;i++){
     N_Eq[i] = f_idx[i] - i_idx[i];
-   double * d_rhh= reinterpret_cast<double *>(d_total_b[i*NPar]); 
-   double * d_MM =reinterpret_cast<double *>(total_matrix[i*NPar*NPar]);
+   double * d_rhh= reinterpret_cast<double>(d_total_b[i*NPar]); 
+   double * d_MM =reinterpret_cast<double>(total_matrix[i*NPar*NPar]);
     //Make Matrix A
     dim3 DimBlock (NPar,16);
     dim3 DimGrid (1, N_Eq/16+1);
@@ -909,7 +910,7 @@ thrust::device_vector<doublle> total_matrix(NBatch*NPar*NPar);
     const double alpha = 1.0;
     const double beta  = 0.0;
 
-    cublasDgemm(cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N, NPar, NPar, N_Eq[i], &alpha, d_A+i*NPar*Length, N_Eq,d_A+i*NPar*Length, N_Eq[i], &beta, d_MM, NPar);
+    cublasDgemm(cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N, NPar, NPar, N_Eq[i], &alpha, d_A+i*NPar*Length, N_Eq[i],d_A+i*NPar*Length, N_Eq[i], &beta, d_MM, NPar);
     cublasDgemm(cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N, NPar, 1 , N_Eq[i], &alpha, d_A+i*NPar*Length, N_Eq[i], d_b+i*Length+i_idx[i], N_Eq[i], &beta, d_rhh, NPar);
 //
     //  cusolverDnSetStream(handle, stream);
@@ -936,7 +937,7 @@ thrust::copy(d_Parlists.begin()+NPar*i,d_Parlists.begin()+NPar*(i+1)-1,&ParLists
     const double beta2  = -1.0;
  for(i=0;i<NBatch;i++)
 {
-    cublasDgemm(cublasHandle, CUBLAS_OP_N, CUBLAS_OP_N, N_Eq[i], 1 , NPar, &alpha2, d_A+i*Length*NPar, N_Eq[i], d_par, NPar, &beta2, d_res+i*Length+i_idx[i], N_Eq[i]);
+    cublasDgemm(cublasHandle, CUBLAS_OP_N, CUBLAS_OP_N, N_Eq[i], 1 , NPar, &alpha2, d_A+i*Length*NPar, N_Eq[i], d_Parl+i*NPar, NPar, &beta2, d_res+i*Length+i_idx[i], N_Eq[i]);
 }
    cudaMemcpy(VRes, d_res, NBatch*Length*sizeof(double), cudaMemcpyDeviceToHost);
 
