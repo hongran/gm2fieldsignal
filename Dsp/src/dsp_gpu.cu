@@ -217,12 +217,12 @@ cusolverStatus_t status;
  thrust::device_vector<double *> Par_pointer(NBatch);
 for(unsigned int i=0;i<NBatch;i++)
 {
-Matrix_pointer[i]=&total_matrix[i*n*n];
-Par_pointer[i]=&d_Parlists[i*n];
+Matrix_pointer[i]=(double *)thrust::raw_pointer_cast(&total_matrix[i*n*n]);
+Par_pointer[i]=(double *)thrust::raw_pointer_cast(&d_Parlists[i*n]);
 }
 //LU
-double **matrix_pointer=reinterpret_cast<double **>(&Matrix_pointer[0]);
-  cusolverDnDpotrfBatched(handle, uplo, n, Matrix_pointer, lda, info, NBatch);
+double **matrix_pointer=(double **)thrust::raw_pointer_cast(&Matrix_pointer[0]);
+  cusolverDnDpotrfBatched(handle, uplo, n, matrix_pointer, lda, info, NBatch);
 /*
   cudaMemcpy(h_info, info, NBatch*sizeof(int), cudaMemcpyDeviceToHost);
   
@@ -235,7 +235,7 @@ for(i=0;i<NBatch;i++)
 */
  // cudaMemcpy(x, b, sizeof(double)*n, cudaMemcpyDeviceToDevice)
 
-double **par_pointer=reinterpret_cast<double **>(Par_pointer[0]);
+double **par_pointer=(double **)thrust::raw_pointer_cast(&Par_pointer[0]);
   cusolverDnDpotrsBatched(handle, uplo, n, 1, matrix_pointer, lda, par_pointer, lda,&info[0],NBatch);
 
   cudaDeviceSynchronize();
@@ -897,8 +897,8 @@ thrust::device_vector<double> total_matrix(NBatch*NPar*NPar);
 //make matrix
   for (unsigned int i=0;i<NBatch;i++){
     N_Eq[i] = f_idx[i] - i_idx[i];
-   const double * d_rhh= reinterpret_cast<double *>(&d_total_b[i*NPar]); 
-   const double * d_MM =reinterpret_cast<double *>(&total_matrix[i*NPar*NPar]);
+   double * d_rhh= (double *)thrust::raw_pointer_cast(&d_total_b[i*NPar]); 
+   double * d_MM =(double *)thrust::raw_pointer_cast(&total_matrix[i*NPar*NPar]);
     //Make Matrix A
     dim3 DimBlock (NPar,16);
     dim3 DimGrid (1, N_Eq[i]/16+1);
@@ -926,9 +926,9 @@ thrust::device_vector<double> total_matrix(NBatch*NPar*NPar);
 }
 
 //Calculate Parlist
-double * d_tmatrix= reinterpret_cast<double>(total_matrix[0]);
-double * d_Parl= reinterpret_cast<double>(d_ParLists[0]);
-double * d_b_total=reinterpret_cast<double>(d_total_b);
+double * d_tmatrix= (double *)thrust::raw_pointer_cast(&total_matrix[0]);
+double * d_Parl= (double *)thrust::raw_pointer_cast(&d_Parlists[0]);
+double * d_b_total=(double *)thrust::raw_pointer_cast(&d_total_b[0]);
  linearSolverCHOL(handle, NPar, d_tmatrix,NPar,d_b_total,NBatch,d_Parl);
 for(unsigned int i=0;i<NBatch;i++)
 { 
@@ -937,7 +937,7 @@ thrust::copy(d_Parlists.begin()+NPar*i,d_Parlists.begin()+NPar*(i+1)-1,&ParLists
  //Calculate Copy residual vector as a whole
     const double alpha2 = 1.0;
     const double beta2  = -1.0;
- for(i=0;i<NBatch;i++)
+ for(unsigned int i=0;i<NBatch;i++)
 {
     cublasDgemm(cublasHandle, CUBLAS_OP_N, CUBLAS_OP_N, N_Eq[i], 1 , NPar, &alpha2, d_A+i*Length*NPar, N_Eq[i], d_Parl+i*NPar, NPar, &beta2, d_res+i*Length+i_idx[i], N_Eq[i]);
 }
