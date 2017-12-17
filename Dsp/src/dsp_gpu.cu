@@ -214,7 +214,7 @@ int linearSolverCHOL(
     const int NBatch,
     double *d_Parlists,
     double *d_error,
-   bool control
+  const bool control
     )
 {
   cudaError_t cudaStatus;
@@ -265,12 +265,12 @@ double **par_pointer=(double **)thrust::raw_pointer_cast(&Par_pointer[0]);
 //error matrix modification
 if(control)
 {
-thrust::device_vector<double *> error_pinter(NBatch);
+thrust::device_vector<double *> error_pointer(NBatch);
 double ** err_pointer=(double **)thrust::raw_pointer_cast(&error_pointer[0]);
 dim3 DimBlock (NBatch,16);
 dim3 DimGrid (1, 1);
-initBatchIdentity<<<DimGrid, DimBlock>>>(NPar,NBatch,d_error,err_pointer);
-cuvolverDnDpotrsBatched();
+initBatchIdentity<<<DimGrid, DimBlock>>>(n,NBatch,d_error,err_pointer);
+cuvolverDnDpotrsBatched(handle,uplo,n,n,matrix_pointer,lda,err_pointer,lda,&info[0],NBatch);
 }
 else
 {
@@ -853,7 +853,8 @@ std::vector<double> convolve(const std::vector<double>& v, const std::vector<dou
   }
 }
  
-int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const std::vector<unsigned int> i_idx, const std::vector<unsigned int> f_idx , const size_t NPar,const unsigned int NBatch, const unsigned int Length,std::vector<std::vector<double>>& ParLists, std::vector<double>& Res;std::vector &err_matrix, bool control)
+int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const std::vector<unsigned int> i_idx, const std::vector<unsigned int> f_idx , const size_t NPar,const unsigned int NBatch, const unsigned int Length,std::vector<std::vector<double>>& ParLists, std::vector<double>& Res,std::vector<double> &err_matrix,const bool control)
+
 {
 
   //Create the cuSolver
@@ -945,18 +946,18 @@ thrust::device_vector<double> total_matrix(NBatch*NPar*NPar);
   double * d_error_matrix=nullptr;
 if(control)
 {
-  cudaMalloc(&d_error, NBatch*NPar*NPar);
+  cudaMalloc(&d_error_matrix, NBatch*NPar*NPar);
 }
 else
 {
-  cudaMalloc(&d_error, 1);
+  cudaMalloc(&d_error_matrix, 1);
 }
 
 //Calculate Parlist
 double * d_tmatrix= (double *)thrust::raw_pointer_cast(&total_matrix[0]);
 double * d_Parl= (double *)thrust::raw_pointer_cast(&d_Parlists[0]);
 double * d_b_total=(double *)thrust::raw_pointer_cast(&d_total_b[0]);
- linearSolverCHOL(handle, NPar, d_tmatrix,NPar,d_b_total,NBatch,d_Parl.d_error,control);
+ linearSolverCHOL(handle, NPar, d_tmatrix,NPar,d_b_total,NBatch,d_Parl.d_error_matrix,control);
 for(unsigned int i=0;i<NBatch;i++)
 { 
 thrust::copy(d_Parlists.begin()+NPar*i,d_Parlists.begin()+NPar*(i+1)-1,&ParLists[i][0]);
@@ -964,7 +965,7 @@ thrust::copy(d_Parlists.begin()+NPar*i,d_Parlists.begin()+NPar*(i+1)-1,&ParLists
 //copy error matrix
 if(control)
 {
-cudaMemcpy(error_matrix,d_error,NBatch*NPar*NPar*sizeof(double),cudaMemcpyDeviceToHost);
+cudaMemcpy(error_matrix,d_error_matrix,NBatch*NPar*NPar*sizeof(double),cudaMemcpyDeviceToHost);
 }
 else
 {
@@ -1008,7 +1009,7 @@ else
   //cudaFree(d_par);
   cudaFree(N_Eq);
 //  cudaFree(h_A);
-  cudaFree(d_error);
+  cudaFree(d_error_matrix);
   return 0;
 }
 
@@ -1627,12 +1628,14 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   if( control_matrix)
   {
   std::vector<double> error_matrix(NBatch*NFitPar*NFitPar);
+  double * err_matrix=reinterpret_cast<double *>(&error_matrix[0]);
   }
   else
   {
   std::vector<double> error_matrix(1);
+  double * err_matrix=reinterpret_cast<double *>(&error_matrix[0]);
   }
-  linear_fit(tm,phi, iwf, fwf , NFitPar,NBatch,Length, FitPars, ResidualOut,err_matrix,control_matrix);
+  linear_fit(tm,phi, iwf, fwf , NFitPar,NBatch,Length, FitPars, ResidualOut, err_matrix , control_matrix);
   auto t5 = std::chrono::high_resolution_clock::now();
   auto dtn5 = t5.time_since_epoch() - t4.time_since_epoch();
   double dt5 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn5).count();
