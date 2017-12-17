@@ -224,49 +224,106 @@ __global__ void BatchFindFFTRange(const double * D_psd,unsigned int * D_max_idx_
   }
 }
 
+__global__ void initBatchIdentity(const int size, const int NBatch,double *x, double **y)
+{
+int i= blockDim.x * blockIdx.x + threadIdx.x;
+if ( i < NBatch )
+{
+ y[i]=&x[i*size*size];
+ for(unsigned int m=0; m<size; x++)
+{
+  for(unsigned int n=0;n<size;y++)
+  {
+   if(m==n)
+   {
+  x[i*size*size+m*size+n]=1;
+   }
+   else
+  {
+  x[i*size*size+m*size+n]=0; 
+  }  
+  }
+}
+}
+}
+
 int linearSolverCHOL(
     cusolverDnHandle_t handle,
     int n,
-    const double *Acopy,
+    const double * total_matrix,
     int lda,
-    const double *b,
-    double *x)
+    const double * d_b,
+    const int NBatch,
+    double *d_Parlists,
+    double *d_error,
+  const bool control
+    )
 {
-  int bufferSize = 0;
+  cudaError_t cudaStatus;
+cusolverStatus_t status;
+
+ // int bufferSize = 0;
   int *info = NULL;
-  double *buffer = NULL;
+  //double *buffer = NULL;
   double *A = NULL;
-  int h_info = 0;
+ // int *h_info = Null;
   cublasFillMode_t uplo = CUBLAS_FILL_MODE_LOWER;
-
-  cusolverDnDpotrf_bufferSize(handle, uplo, n, (double*)Acopy, lda, &bufferSize);
-
-  cudaMalloc(&info, sizeof(int));
-  cudaMalloc(&buffer, sizeof(double)*bufferSize);
-  cudaMalloc(&A, sizeof(double)*lda*n);
-
+ // h_info=(int *)malloc(NBatch); 
+  //cusolverDnDpotrf_bufferSize(handle, uplo, n, (double*)total_matrix, lda, &bufferSize);
+  cudaMalloc(&info, NBatch*sizeof(int));
+  //cudaMalloc(&buffer, sizeof(double)*bufferSize);
+  cudaMalloc(&A, sizeof(double)*lda*n*NBatch);
 
   // prepare a copy of A because potrf will overwrite A with L
-  cudaMemcpy(A, Acopy, sizeof(double)*lda*n, cudaMemcpyDeviceToDevice);
-  cudaMemset(info, 0, sizeof(int));
-
-  cusolverDnDpotrf(handle, uplo, n, A, lda, buffer, bufferSize, info);
-
-  cudaMemcpy(&h_info, info, sizeof(int), cudaMemcpyDeviceToHost);
-
-  if ( 0 != h_info ){ 
+  cudaMemcpy(A, total_matrix, sizeof(double)*lda*n*NBatch, cudaMemcpyDeviceToDevice);
+  //cudaMemset(info, 0, sizeof(int));
+  // prepare Parlist
+  cudaMemcpy(d_Parlists,d_b,sizeof(double)*n*NBatch,cudaMemcpyDeviceToDevice);
+  //find Matrix_pointer and Par_pointer
+ thrust::device_vector<double *> Matrix_pointer(NBatch);
+ thrust::device_vector<double *> Par_pointer(NBatch);
+for(unsigned int i=0;i<NBatch;i++)
+{
+Matrix_pointer[i]=(double *)thrust::raw_pointer_cast(&total_matrix[i*n*n]);
+Par_pointer[i]=(double *)thrust::raw_pointer_cast(&d_Parlists[i*n]);
+}
+//LU
+double **matrix_pointer=(double **)thrust::raw_pointer_cast(&Matrix_pointer[0]);
+  cusolverDnDpotrfBatched(handle, uplo, n, matrix_pointer, lda, info, NBatch);
+/*
+  cudaMemcpy(h_info, info, NBatch*sizeof(int), cudaMemcpyDeviceToHost);
+  
+for(i=0;i<NBatch;i++)
+ {
+  if ( 0 != h_info[i] ){ 
     fprintf(stderr, "Error: Cholesky factorization failed\n");
   }
+ }
+*/
+ // cudaMemcpy(x, b, sizeof(double)*n, cudaMemcpyDeviceToDevice)
 
-  cudaMemcpy(x, b, sizeof(double)*n, cudaMemcpyDeviceToDevice);
+double **par_pointer=(double **)thrust::raw_pointer_cast(&Par_pointer[0]);
+  cusolverDnDpotrsBatched(handle, uplo, n, 1, matrix_pointer, lda, par_pointer, lda,&info[0],NBatch);
+//error matrix modification
+if(control)
+{
+thrust::device_vector<double *> error_pointer(NBatch);
+double ** err_pointer=(double **)thrust::raw_pointer_cast(&error_pointer[0]);
+dim3 DimBlock (NBatch,16);
+dim3 DimGrid (1, 1);
+initBatchIdentity<<<DimGrid, DimBlock>>>(n,NBatch,d_error,err_pointer);
+cuvolverDnDpotrsBatched(handle,uplo,n,n,matrix_pointer,lda,err_pointer,lda,&info[0],NBatch);
+}
+else
+{
+;
+}
 
-  cusolverDnDpotrs(handle, uplo, n, 1, A, lda, x, n, info);
-
+//
   cudaDeviceSynchronize();
 
-  if (info  ) { cudaFree(info); }
-  if (buffer) { cudaFree(buffer); }
-  if (A     ) { cudaFree(A); }
+   cudaFree(info); 
+   cudaFree(A);
 
   return 0;
 }
@@ -783,8 +840,10 @@ std::vector<double> convolve(const std::vector<double>& v, const std::vector<dou
   }
 }
  
-int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const std::vector<unsigned int> i_idx, const std::vector<unsigned int> f_idx , const size_t NPar,const unsigned int NBatch, const unsigned int Length,std::vector<std::vector<double>>& ParLists, std::vector<double>& Res)
+int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const std::vector<unsigned int> i_idx, const std::vector<unsigned int> f_idx , const size_t NPar,const unsigned int NBatch, const unsigned int Length,std::vector<std::vector<double>>& ParLists, std::vector<double>& Res,std::vector<double> &err_matrix,const bool control)
+
 {
+
   //Create the cuSolver
   static cusolverDnHandle_t handle = NULL;
   static cublasHandle_t cublasHandle = NULL; // used in residual evaluation
@@ -807,69 +866,63 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
   //const double * Vdata = reinterpret_cast<const double *>(&x[i_idx]);
   //double * VSol = reinterpret_cast<double *>(&ParList[0]);
   //double * VRes = reinterpret_cast<double *>(&Res[i_idx]);
+
   const double * Vb = reinterpret_cast<const double *>(&y[0]);
   const double * Vdata = reinterpret_cast<const double *>(&x[0]);
   double * VRes = reinterpret_cast<double *>(&Res[0]);
-//  double * h_A = nullptr;
-//  double * h_M = nullptr;
-  //Allocate Device memory
-/*  double * d_A = nullptr;
-  double * d_M = nullptr;
-  double * d_b = nullptr;
-  double * d_rh = nullptr;
-  double * d_data =nullptr;
-  double * d_par =nullptr;
-*/
+
+//save total makematrix 
   static double * d_A = nullptr;
-  static double * d_M = nullptr;
+//save y
   static double * d_b = nullptr;
-  static double * d_rh = nullptr;
+//save length of each signal
+  static double * N_Eq= nullptr;
+//save x
   static double * d_data =nullptr;
+//save residue
   static double * d_res =nullptr;
-  static double * d_par =nullptr;
-  //size_t size_A = NPar*N_Eq*sizeof(double);
-  size_t size_A = NPar*Length*sizeof(double);
-  size_t size_M = NPar*NPar*sizeof(double);
+ // size
+  size_t size_A =NBatch*NPar*Length*sizeof(double);
+  size_t size_Eq= NBatch*sizeof(double);
+ //malloc
   cudaMalloc(&d_A, size_A);
-  cudaMalloc(&d_M, size_M);
-  //cudaMalloc(&d_b, N_Eq*sizeof(double));
+  cudaMalloc(&N_Eq,size_Eq);
   cudaMalloc(&d_b, NBatch*Length*sizeof(double));
-  cudaMalloc(&d_rh, NPar*sizeof(double));
-  //cudaMalloc(&d_data, N_Eq*sizeof(double));
-  //cudaMalloc(&d_res, N_Eq*sizeof(double));
-  cudaMalloc(&d_data, NBatch*Length*sizeof(double));
+  cudaMalloc(&d_data, NBatch*Length*sizeof(double)); 
   cudaMalloc(&d_res, NBatch*Length*sizeof(double));
-  cudaMalloc(&d_par, NPar*sizeof(double));
-  /*
-  if (d_A==nullptr) cudaMalloc(&d_A, size_A);
-  if (d_M==nullptr) cudaMalloc(&d_M, size_M);
-  if (d_b==nullptr) cudaMalloc(&d_b, N_Eq*sizeof(double));
-  if (d_rh==nullptr) cudaMalloc(&d_rh, NPar*sizeof(double));
-  if (d_data==nullptr) cudaMalloc(&d_data, N_Eq*sizeof(double));
-  if (d_par==nullptr) cudaMalloc(&d_par, NPar*sizeof(double));
-*/
   //copy to device
   cudaMemcpy(d_b, Vb, NBatch*Length*sizeof(double), cudaMemcpyHostToDevice);
+
   cudaMemcpy(d_res, d_b, NBatch*Length*sizeof(double), cudaMemcpyDeviceToDevice);
   cudaMemcpy(d_data, Vdata, NBatch*Length*sizeof(double), cudaMemcpyHostToDevice);
 
+//save total parameters
+thrust::device_vector<double> d_Parlists(NBatch*NPar);
+//save total A_T*b
+thrust::device_vector<double> d_total_b(NBatch*NPar);
+//save total A_TA matrix
+thrust::device_vector<double> total_matrix(NBatch*NPar*NPar);
+//make matrix
   for (unsigned int i=0;i<NBatch;i++){
-    auto N_Eq = f_idx[i] - i_idx[i];
-    double * VSol = reinterpret_cast<double *>(&ParLists[i][0]);
+    N_Eq[i] = f_idx[i] - i_idx[i];
+   double * d_rhh= (double *)thrust::raw_pointer_cast(&d_total_b[i*NPar]); 
+   double * d_MM =(double *)thrust::raw_pointer_cast(&total_matrix[i*NPar*NPar]);
     //Make Matrix A
     dim3 DimBlock (NPar,16);
-    dim3 DimGrid (1, N_Eq/16+1);
-    MakeMatrix<<<DimGrid, DimBlock>>>(d_data,d_A,NPar,N_Eq,i*Length+i_idx[i]);
+    dim3 DimGrid (1, N_Eq[i]/16+1);
+    MakeMatrix<<<DimGrid, DimBlock>>>(d_data,d_A+i*NPar*Length,NPar,N_Eq[i],i*Length+i_idx[i]);
 /*    auto t1 = std::chrono::high_resolution_clock::now();
     auto dtn1 = t1.time_since_epoch() - t0.time_since_epoch();
     double dt1 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn1).count();
     std::cout << "Time for making matrix  = "<<dt1<<std::endl;
 */
+    //Make Matrix M
     const double alpha = 1.0;
     const double beta  = 0.0;
 
-    cublasDgemm(cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N, NPar, NPar, N_Eq, &alpha, d_A, N_Eq, d_A, N_Eq, &beta, d_M, NPar);
-    cublasDgemm(cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N, NPar, 1 , N_Eq, &alpha, d_A, N_Eq, d_b+i*Length+i_idx[i], N_Eq, &beta, d_rh, NPar);
+    cublasDgemm(cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N, NPar, NPar, N_Eq[i], &alpha, d_A+i*NPar*Length, N_Eq[i],d_A+i*NPar*Length, N_Eq[i], &beta, d_MM, NPar);
+    cublasDgemm(cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N, NPar, 1 , N_Eq[i], &alpha, d_A+i*NPar*Length, N_Eq[i], d_b+i*Length+i_idx[i], N_Eq[i], &beta, d_rhh, NPar);
+//
     //  cusolverDnSetStream(handle, stream);
     //  cublasSetStream(cublasHandle, stream);
 
@@ -877,21 +930,47 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
     auto dtn2 = t2.time_since_epoch() - t1.time_since_epoch();
     double dt2 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn2).count();
     std::cout << "Time for ATA  = "<<dt2<<std::endl;
-*/
-    linearSolverCHOL(handle, NPar, d_M, NPar, d_rh, d_par);
+*/   
+}
+//error matrix modification
+  double *  error_matrix=reinterpret_cast<double *>(&err_matrix[0]);
+  double * d_error_matrix=nullptr;
+if(control)
+{
+  cudaMalloc(&d_error_matrix, NBatch*NPar*NPar);
+}
+else
+{
+  cudaMalloc(&d_error_matrix, 1);
+}
 
-    //Calculate residual
-
+//Calculate Parlist
+double * d_tmatrix= (double *)thrust::raw_pointer_cast(&total_matrix[0]);
+double * d_Parl= (double *)thrust::raw_pointer_cast(&d_Parlists[0]);
+double * d_b_total=(double *)thrust::raw_pointer_cast(&d_total_b[0]);
+ linearSolverCHOL(handle, NPar, d_tmatrix,NPar,d_b_total,NBatch,d_Parl.d_error_matrix,control);
+for(unsigned int i=0;i<NBatch;i++)
+{ 
+thrust::copy(d_Parlists.begin()+NPar*i,d_Parlists.begin()+NPar*(i+1)-1,&ParLists[i][0]);
+}
+//copy error matrix
+if(control)
+{
+cudaMemcpy(error_matrix,d_error_matrix,NBatch*NPar*NPar*sizeof(double),cudaMemcpyDeviceToHost);
+}
+else
+{
+;
+}
+ //Calculate Copy residual vector as a whole
+    const double alpha2 = 1.0;
     const double beta2  = -1.0;
-    cublasDgemm(cublasHandle, CUBLAS_OP_N, CUBLAS_OP_N, N_Eq, 1 , NPar, &alpha, d_A, N_Eq, d_par, NPar, &beta2, d_res+i*Length+i_idx[i], N_Eq);
-    /*
-       h_M = (double *)malloc(size_M);
-       cudaMemcpy(h_M, d_M, size_M, cudaMemcpyDeviceToHost);
-     */
-    cudaMemcpy(VSol, d_par, NPar*sizeof(double), cudaMemcpyDeviceToHost);
-  }
-  //Copy residual vector as a whole
-  cudaMemcpy(VRes, d_res, NBatch*Length*sizeof(double), cudaMemcpyDeviceToHost);
+ for(unsigned int i=0;i<NBatch;i++)
+{
+    cublasDgemm(cublasHandle, CUBLAS_OP_N, CUBLAS_OP_N, N_Eq[i], 1 , NPar, &alpha2, d_A+i*Length*NPar, N_Eq[i], d_Parl+i*NPar, NPar, &beta2, d_res+i*Length+i_idx[i], N_Eq[i]);
+}
+   cudaMemcpy(VRes, d_res, NBatch*Length*sizeof(double), cudaMemcpyDeviceToHost);
+
 
   auto t3 = std::chrono::high_resolution_clock::now();
   auto dtn3 = t3.time_since_epoch() - t0.time_since_epoch();
@@ -913,14 +992,15 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
   }
 */
   cudaFree(d_A);
-  cudaFree(d_M);
+ // cudaFree(d_M);
   cudaFree(d_b);
-  cudaFree(d_rh);
+  //cudaFree(d_rh);
   cudaFree(d_data);
   cudaFree(d_res);
-  cudaFree(d_par);
-
+  //cudaFree(d_par);
+  cudaFree(N_Eq);
 //  cudaFree(h_A);
+  cudaFree(d_error_matrix);
   return 0;
 }
 
@@ -1439,14 +1519,28 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
 
   //Fit phase to linear functions
   /*for(unsigned int j=0;j<NBatch;j++)
-  {
+    {
     linear_fit(tm,phi, j*Length+iwf[j], j*Length+fwf[j] , NFitPar, FitPars[j], ResidualOut);
-  }*/
-  linear_fit(tm,phi, iwf, fwf , NFitPar,NBatch,Length, FitPars, ResidualOut);
+    }*/
+
+  bool control_matrix=true;
+  double * err_matrix;
+  std::vector<double> error_matrix(NBatch*NFitPar*NFitPar);
+  if( control_matrix)
+  {
+    err_matrix=reinterpret_cast<double *>(&error_matrix[0]);
+  }
+  else
+  {
+    error_matrix.resize(1);
+    err_matrix=reinterpret_cast<double *>(&error_matrix[0]);
+  }
+  linear_fit(tm,phi, iwf, fwf , NFitPar,NBatch,Length, FitPars, ResidualOut, err_matrix , control_matrix);
   auto t4 = std::chrono::high_resolution_clock::now();
   auto dtn4 = t4.time_since_epoch() - t3.time_since_epoch();
   double dt4 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn4).count();
   std::cout << "Time for fit = "<<dt4<<std::endl;
+
   return 0;
 }
 
