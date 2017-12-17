@@ -256,7 +256,7 @@ int linearSolverCHOL(
     const int NBatch,
     double *d_Parlists,
     double *d_error,
-  const bool control
+    const bool control
     )
 {
   cudaError_t cudaStatus;
@@ -847,10 +847,10 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
   //Create the cuSolver
   static cusolverDnHandle_t handle = NULL;
   static cublasHandle_t cublasHandle = NULL; // used in residual evaluation
-//  cudaStream_t stream = NULL;
+  //  cudaStream_t stream = NULL;
   if (handle==NULL)cusolverDnCreate(&handle);
   if (cublasHandle==NULL)cublasCreate(&cublasHandle);
-//  cudaStreamCreate(&stream);
+  //  cudaStreamCreate(&stream);
 
   auto t0 = std::chrono::high_resolution_clock::now();
   assert(x.size() == y.size());
@@ -871,20 +871,20 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
   const double * Vdata = reinterpret_cast<const double *>(&x[0]);
   double * VRes = reinterpret_cast<double *>(&Res[0]);
 
-//save total makematrix 
+  //save total makematrix 
   static double * d_A = nullptr;
-//save y
+  //save y
   static double * d_b = nullptr;
-//save length of each signal
+  //save length of each signal
   static double * N_Eq= nullptr;
-//save x
+  //save x
   static double * d_data =nullptr;
-//save residue
+  //save residue
   static double * d_res =nullptr;
- // size
+  // size
   size_t size_A =NBatch*NPar*Length*sizeof(double);
   size_t size_Eq= NBatch*sizeof(double);
- //malloc
+  //malloc
   cudaMalloc(&d_A, size_A);
   cudaMalloc(&N_Eq,size_Eq);
   cudaMalloc(&d_b, NBatch*Length*sizeof(double));
@@ -896,80 +896,76 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
   cudaMemcpy(d_res, d_b, NBatch*Length*sizeof(double), cudaMemcpyDeviceToDevice);
   cudaMemcpy(d_data, Vdata, NBatch*Length*sizeof(double), cudaMemcpyHostToDevice);
 
-//save total parameters
-thrust::device_vector<double> d_Parlists(NBatch*NPar);
-//save total A_T*b
-thrust::device_vector<double> d_total_b(NBatch*NPar);
-//save total A_TA matrix
-thrust::device_vector<double> total_matrix(NBatch*NPar*NPar);
-//make matrix
+  //save total parameters
+  thrust::device_vector<double> d_Parlists(NBatch*NPar);
+  //save total A_T*b
+  thrust::device_vector<double> d_total_b(NBatch*NPar);
+  //save total A_TA matrix
+  thrust::device_vector<double> total_matrix(NBatch*NPar*NPar);
+  //make matrix
   for (unsigned int i=0;i<NBatch;i++){
     N_Eq[i] = f_idx[i] - i_idx[i];
-   double * d_rhh= (double *)thrust::raw_pointer_cast(&d_total_b[i*NPar]); 
-   double * d_MM =(double *)thrust::raw_pointer_cast(&total_matrix[i*NPar*NPar]);
+    double * d_rhh= (double *)thrust::raw_pointer_cast(&d_total_b[i*NPar]); 
+    double * d_MM =(double *)thrust::raw_pointer_cast(&total_matrix[i*NPar*NPar]);
     //Make Matrix A
     dim3 DimBlock (NPar,16);
     dim3 DimGrid (1, N_Eq[i]/16+1);
     MakeMatrix<<<DimGrid, DimBlock>>>(d_data,d_A+i*NPar*Length,NPar,N_Eq[i],i*Length+i_idx[i]);
-/*    auto t1 = std::chrono::high_resolution_clock::now();
-    auto dtn1 = t1.time_since_epoch() - t0.time_since_epoch();
-    double dt1 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn1).count();
-    std::cout << "Time for making matrix  = "<<dt1<<std::endl;
-*/
+    /*    auto t1 = std::chrono::high_resolution_clock::now();
+	  auto dtn1 = t1.time_since_epoch() - t0.time_since_epoch();
+	  double dt1 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn1).count();
+	  std::cout << "Time for making matrix  = "<<dt1<<std::endl;
+     */
     //Make Matrix M
     const double alpha = 1.0;
     const double beta  = 0.0;
 
     cublasDgemm(cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N, NPar, NPar, N_Eq[i], &alpha, d_A+i*NPar*Length, N_Eq[i],d_A+i*NPar*Length, N_Eq[i], &beta, d_MM, NPar);
     cublasDgemm(cublasHandle, CUBLAS_OP_T, CUBLAS_OP_N, NPar, 1 , N_Eq[i], &alpha, d_A+i*NPar*Length, N_Eq[i], d_b+i*Length+i_idx[i], N_Eq[i], &beta, d_rhh, NPar);
-//
+    //
     //  cusolverDnSetStream(handle, stream);
     //  cublasSetStream(cublasHandle, stream);
 
- /*   auto t2 = std::chrono::high_resolution_clock::now();
-    auto dtn2 = t2.time_since_epoch() - t1.time_since_epoch();
-    double dt2 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn2).count();
-    std::cout << "Time for ATA  = "<<dt2<<std::endl;
-*/   
-}
-//error matrix modification
+    /*   auto t2 = std::chrono::high_resolution_clock::now();
+	 auto dtn2 = t2.time_since_epoch() - t1.time_since_epoch();
+	 double dt2 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn2).count();
+	 std::cout << "Time for ATA  = "<<dt2<<std::endl;
+     */   
+  }
+  //error matrix modification
   double *  error_matrix=reinterpret_cast<double *>(&err_matrix[0]);
   double * d_error_matrix=nullptr;
-if(control)
-{
-  cudaMalloc(&d_error_matrix, NBatch*NPar*NPar);
-}
-else
-{
-  cudaMalloc(&d_error_matrix, 1);
-}
+  if(control)
+  {
+    cudaMalloc(&d_error_matrix, NBatch*NPar*NPar);
+  }
+  else
+  {
+    cudaMalloc(&d_error_matrix, 1);
+  }
 
-//Calculate Parlist
-double * d_tmatrix= (double *)thrust::raw_pointer_cast(&total_matrix[0]);
-double * d_Parl= (double *)thrust::raw_pointer_cast(&d_Parlists[0]);
-double * d_b_total=(double *)thrust::raw_pointer_cast(&d_total_b[0]);
- linearSolverCHOL(handle, NPar, d_tmatrix,NPar,d_b_total,NBatch,d_Parl.d_error_matrix,control);
-for(unsigned int i=0;i<NBatch;i++)
-{ 
-thrust::copy(d_Parlists.begin()+NPar*i,d_Parlists.begin()+NPar*(i+1)-1,&ParLists[i][0]);
-}
-//copy error matrix
-if(control)
-{
-cudaMemcpy(error_matrix,d_error_matrix,NBatch*NPar*NPar*sizeof(double),cudaMemcpyDeviceToHost);
-}
-else
-{
-;
-}
- //Calculate Copy residual vector as a whole
-    const double alpha2 = 1.0;
-    const double beta2  = -1.0;
- for(unsigned int i=0;i<NBatch;i++)
-{
+  //Calculate Parlist
+  double * d_tmatrix= (double *)thrust::raw_pointer_cast(&total_matrix[0]);
+  double * d_Parl= (double *)thrust::raw_pointer_cast(&d_Parlists[0]);
+  double * d_b_total=(double *)thrust::raw_pointer_cast(&d_total_b[0]);
+  linearSolverCHOL(handle, NPar, d_tmatrix,NPar,d_b_total,NBatch,d_Parl,d_error_matrix,control);
+  for(unsigned int i=0;i<NBatch;i++)
+  { 
+    thrust::copy(d_Parlists.begin()+NPar*i,d_Parlists.begin()+NPar*(i+1)-1,&ParLists[i][0]);
+  }
+  //copy error matrix
+  if(control)
+  {
+    cudaMemcpy(error_matrix,d_error_matrix,NBatch*NPar*NPar*sizeof(double),cudaMemcpyDeviceToHost);
+  }
+  //Calculate Copy residual vector as a whole
+  const double alpha2 = 1.0;
+  const double beta2  = -1.0;
+  for(unsigned int i=0;i<NBatch;i++)
+  {
     cublasDgemm(cublasHandle, CUBLAS_OP_N, CUBLAS_OP_N, N_Eq[i], 1 , NPar, &alpha2, d_A+i*Length*NPar, N_Eq[i], d_Parl+i*NPar, NPar, &beta2, d_res+i*Length+i_idx[i], N_Eq[i]);
-}
-   cudaMemcpy(VRes, d_res, NBatch*Length*sizeof(double), cudaMemcpyDeviceToHost);
+  }
+  cudaMemcpy(VRes, d_res, NBatch*Length*sizeof(double), cudaMemcpyDeviceToHost);
 
 
   auto t3 = std::chrono::high_resolution_clock::now();
@@ -979,27 +975,27 @@ else
 
   /*for (int i=0;i<N_Eq;i++){
     std::cout << h_A[NPar*i+0] << " " << h_A[NPar*i+1] <<" "<<Vdata[i] <<std::endl;
-  }
-  std::cout<<NPar<<" "<<N_Eq<<std::endl;
-  for (size_t i=0;i<NPar;i++){
+    }
+    std::cout<<NPar<<" "<<N_Eq<<std::endl;
+    for (size_t i=0;i<NPar;i++){
     for (size_t j=0;j<NPar;j++){
-      std::cout << h_M[NPar*i+j]<< " ";
+    std::cout << h_M[NPar*i+j]<< " ";
     }
     std::cout << std::endl;
-  }
-  for (size_t j=0;j<NPar;j++){
+    }
+    for (size_t j=0;j<NPar;j++){
     std::cout << VSol[j]<< std::endl;
-  }
-*/
+    }
+   */
   cudaFree(d_A);
- // cudaFree(d_M);
+  // cudaFree(d_M);
   cudaFree(d_b);
   //cudaFree(d_rh);
   cudaFree(d_data);
   cudaFree(d_res);
   //cudaFree(d_par);
   cudaFree(N_Eq);
-//  cudaFree(h_A);
+  //  cudaFree(h_A);
   cudaFree(d_error_matrix);
   return 0;
 }
@@ -1524,17 +1520,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
     }*/
 
   bool control_matrix=true;
-  double * err_matrix;
-  std::vector<double> error_matrix(NBatch*NFitPar*NFitPar);
-  if( control_matrix)
-  {
-    err_matrix=reinterpret_cast<double *>(&error_matrix[0]);
-  }
-  else
-  {
-    error_matrix.resize(1);
-    err_matrix=reinterpret_cast<double *>(&error_matrix[0]);
-  }
+  std::vector<double> err_matrix(NBatch*NFitPar*NFitPar);
   linear_fit(tm,phi, iwf, fwf , NFitPar,NBatch,Length, FitPars, ResidualOut, err_matrix , control_matrix);
   auto t4 = std::chrono::high_resolution_clock::now();
   auto dtn4 = t4.time_since_epoch() - t3.time_since_epoch();
