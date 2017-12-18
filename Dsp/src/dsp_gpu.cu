@@ -200,6 +200,7 @@ __global__ void BatchFindRange(const double * D_env,double * D_MaxAmp, unsigned 
     D_MaxAmp[i] = max;
     unsigned int k = thrust::distance(D_env+i*Length,it);
     D_iwf[i] = k;
+    D_fwf[i] = k;
     while (k<Length){
       if (D_env[i*Length+k]<max*thresh){
 	D_fwf[i] = k;
@@ -766,6 +767,7 @@ void Processor::FindFitRange(unsigned int Length, unsigned int NBatch,double sta
   {
     if(iwf[i]>Length*0.95||iwf[i]>=fwf[i])
     {
+    //std::cout<<i<<" "<<iwf[i]<<" "<<fwf[i]<<" "<<max_amp[i]<<std::endl;
       health[i]=0;
     }
     else
@@ -956,7 +958,7 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
   cudaMemcpy(d_data, Vdata, NBatch*Length*sizeof(double), cudaMemcpyHostToDevice);
 
   for (unsigned int i=0;i<NBatch;i++){
-    auto N_Eq = f_idx[i] - i_idx[i];
+    auto N_Eq = f_idx[i] - i_idx[i] + 1;//At least 1
     double * VSol = reinterpret_cast<double *>(&ParLists[i][0]);
     //Make Matrix A
     dim3 DimBlock (NPar,16);
@@ -1131,11 +1133,11 @@ int IntegratedProcessor::SetAmpThreshold(double Thresh)
   start_amplitude = Thresh;
   return 0;
 }
-
+/*
 void IntegratedProcessor::AnaSwith(bool sw)
 {
   FreqAnaSwitch = sw;
-}
+}*/
 
 void IntegratedProcessor::SetNFitPar(unsigned int N)
 {
@@ -1387,6 +1389,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   }*/
   for(unsigned int i=0; i<NBatch; i++)
   {
+  //  std::cout<<i<<" "<<iwf[i]<<" "<<fwf[i]<<" "<<max_amp[i]<<std::endl;
     if(iwf[i]>Length*0.95||iwf[i]>=fwf[i])
     {
       health[i]=0;
@@ -1427,6 +1430,10 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
     linear_fit(tm,phi, j*Length+iwf[j], j*Length+fwf[j] , NFitPar, FitPars[j], ResidualOut);
   }*/
   linear_fit(tm,phi, iwf, fwf , NFitPar,NBatch,Length, FitPars, ResidualOut);
+  //Fill Freq Res Array
+  for (unsigned int i=0;i<NBatch;i++){
+    FreqResArray[i][7] = FitPars[i][1] / kTau;
+  }
   auto t4 = std::chrono::high_resolution_clock::now();
   auto dtn4 = t4.time_since_epoch() - t3.time_since_epoch();
   double dt4 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn4).count();

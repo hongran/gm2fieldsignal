@@ -305,7 +305,7 @@ class IntegratedProcessor{
     int SetFilters(double low, double high, double baseline_thresh, double peak_width );
     int SetEdges(double ignore, double width);
     int SetAmpThreshold(double Thresh);
-    void AnaSwith(bool sw);
+//    void AnaSwith(bool sw);
     void SetNFitPar(unsigned int N);
     int Process(const std::vector<double>& wf,const std::vector<double>& tm, std::vector<double>& freq,
 	std::vector<double>& filtered_wf, std::vector<double>& wf_im, std::vector<double>& baseline,
@@ -326,7 +326,7 @@ class IntegratedProcessor{
     double edge_ignore = 6e-5;
     double edge_width = 2e-5;
     double start_amplitude = 0.37;
-    bool FreqAnaSwitch = true;
+//    bool FreqAnaSwitch = true;
     unsigned int NFitPar = 3;
     std::vector<std::vector<double>> FitParameters;
     std::vector<double> Residual;

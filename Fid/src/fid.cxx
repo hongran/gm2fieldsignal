@@ -108,6 +108,9 @@ void Fid::SetParameter(const std::string& Name, double Value)
   }else if (Name.compare("len_thresh")==0){ 
     len_thresh_ = Value;
   }
+  theIntegratedProcessor.SetFilters(filter_low_freq_,filter_high_freq_,baseline_freq_thresh_,fft_peak_width_);
+  theIntegratedProcessor.SetEdges(edge_ignore_,edge_width_);
+  theIntegratedProcessor.SetAmpThreshold(start_amplitude_);
 }
 
 void Fid::SetNoise(double NoiseValue){
@@ -116,6 +119,12 @@ void Fid::SetNoise(double NoiseValue){
 
 void Fid::SetBaseline(const std::vector<double>& bl){
   baseline_ = bl;
+}
+
+void Fid::SetPoln(unsigned int N)
+{ 
+  poln = N;
+  theIntegratedProcessor.SetNFitPar(poln);
 }
 
 void Fid::Init(std::string Option)
@@ -147,6 +156,12 @@ void Fid::Init(std::string Option)
   fit_parameters_ =  std::vector<std::vector<double>>(NBatch,std::vector<double>());
   chi2_ = std::vector<double>(NBatch,-1); 
 
+  //Processors
+  theIntegratedProcessor.SetFilters(filter_low_freq_,filter_high_freq_,baseline_freq_thresh_,fft_peak_width_);
+  theIntegratedProcessor.SetEdges(edge_ignore_,edge_width_);
+  theIntegratedProcessor.SetAmpThreshold(start_amplitude_);
+  theIntegratedProcessor.SetNFitPar(poln);
+
   // For fits.
 //  std::vector<double> guess_;
   f_fit_ = std::vector<TF1>(NBatch);  
@@ -171,7 +186,7 @@ void Fid::Init(std::string Option)
 
     freq_method_ = ZC;
     //Calculate Frequncy
-    CalcFreq();
+    CalcZeroCountFreq();
 //  auto t1 = std::chrono::high_resolution_clock::now();
 //  auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
 //  double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
@@ -186,7 +201,8 @@ void Fid::Init(std::string Option)
 	i_wf_,f_wf_, max_idx_fft_,i_fft_,f_fft_, 
 	max_amp_,health_,freq_array_,freq_err_array_,fit_parameters_,res_);
     FFTDone = true;
-    unsigned int NPar = fit_parameters_[0].size();
+    //unsigned int NPar = fit_parameters_[0].size();
+    unsigned int NPar = poln;
     for (unsigned int i=0 ; i<NBatch; i++){
       // Now set up the polynomial phase fit
       char fcn[20];
@@ -624,7 +640,7 @@ void Fid::FreqFit()
     //gr_freq_series_.Fit(&func, "MRSEX0", "C", fftfreq_[i_fft_], fftfreq_[f_fft_]);
 
     chi2_[i] = f_fit_[i].GetChisquare();
-    freq_err_array_[i][freq_method_] = f_fit_[i].GetParError(0) / dsp::kTau;
+  //  freq_err_array_[i][freq_method_] = f_fit_[i].GetParError(0) / dsp::kTau;
 
     res_=std::vector<double>(m*NBatch);
     for (unsigned int j = i_fft_[i]; j < f_fft_[i]; ++j){
@@ -637,115 +653,115 @@ void Fid::FreqFit()
 
 void Fid::CalcZeroCountFreq()
 {
-  /*
-  std::vector<double> temp_;
-  // set up vectors to hold relevant stuff about the important part
-  temp_.resize(f_wf_ - i_wf_);
-
   // printf("fid range: %i, %i\n", i_wf_, f_wf_);
 
-  int nzeros = 0;
-  bool pos = wf_[i_wf_] >= 0.0;
-  bool hyst = false;
-  bool skip_first = true;
-  
-  auto mm = std::minmax_element(wf_.begin(), wf_.end()); // returns {&min, &max}
+  for (unsigned int j=0;j<NBatch;j++){
+    int nzeros = 0;
+    bool pos = wf_[j*fid_size+i_wf_[j]] >= 0.0;
+    bool hyst = false;
+    bool skip_first = true;
 
-  double max = *mm.second;
-  if (std::abs(*mm.first) > max) max = std::abs(*mm.first);
-  
-  // double max = (-(*mm.first) > *mm.second) ? -(*mm.first) : *mm.second;
-  double thresh = hyst_thresh_ * max;
-  //  thresh = 10 * noise_;
+    auto mm = std::minmax_element(wf_.begin()+j*fid_size, wf_.begin()+(j+1)*fid_size); 
 
-  int i_zero = -1;
-  int f_zero = -1;
+    double max = *mm.second;
+    if (std::abs(*mm.first) > max) max = std::abs(*mm.first);
 
-  // printf("env size: %i\n", env_.size());
+    // double max = (-(*mm.first) > *mm.second) ? -(*mm.first) : *mm.second;
+    double thresh = hyst_thresh_ * max;
+    //  thresh = 10 * noise_;
 
-  // iterate over vector
-  for (unsigned int i = i_wf_; i < f_wf_; i++){
+    int i_zero = -1;
+    int f_zero = -1;
 
-    // hysteresis check
-    if (hyst){
-      hyst = std::abs(wf_[i]) < thresh;
-      continue;
-    }
+    // printf("env size: %i\n", env_.size());
 
-    // check for a sign change
-    if ((wf_[i] >= 0.0) != pos){
+    // iterate over vector
+    for (unsigned int i = j*fid_size+i_wf_[j]; i < j*fid_size+f_wf_[j]; i++){
 
-      if (skip_first) {
+      // hysteresis check
+      if (hyst){
+	hyst = std::abs(wf_[i]) < thresh;
+	continue;
+      }
 
-        skip_first = false;
-        pos = !pos;
-        hyst = true;
+      // check for a sign change
+      if ((wf_[i] >= 0.0) != pos){
 
-      } else {
+	if (skip_first) {
 
-        nzeros++;
-        f_zero = i;
-        if (i_zero == -1) i_zero = i;
-        pos = !pos;
-        hyst = true;
+	  skip_first = false;
+	  pos = !pos;
+	  hyst = true;
+
+	} else {
+
+	  nzeros++;
+	  f_zero = i;
+	  if (i_zero == -1) i_zero = i;
+	  pos = !pos;
+	  hyst = true;
+	}
       }
     }
+
+    // printf("finished looking for zeros\n");
+
+    // Use linear interpolation to find the zeros more accurately
+    int i = i_zero;
+    int f = f_zero;
+
+    // do the interpolation
+    double frac = std::abs(wf_[i] / (wf_[i-1] - wf_[i]));
+    double ti = frac * tm_[i-1] + (1.0 - frac) * tm_[i];
+
+    frac = std::abs(wf_[f] / (wf_[f-1] - wf_[f]));
+    double tf = frac * tm_[f-1] + (1.0 - frac) * tm_[f];
+
+    freq_array_[j][ZC] = 0.5 * (nzeros - 1.0) / (tf - ti);
+    // todo: Fix this into a better error estimate. 
+    freq_err_array_[j][ZC] = freq_array_[j][ZC] * sqrt(2) * (tm_[1] - tm_[0]) / (tf - ti);
   }
-
-  // printf("finished looking for zeros\n");
-
-  // Use linear interpolation to find the zeros more accurately
-  int i = i_zero;
-  int f = f_zero;
-
-  // do the interpolation
-  double frac = std::abs(wf_[i] / (wf_[i-1] - wf_[i]));
-  double ti = frac * tm_[i-1] + (1.0 - frac) * tm_[i];
-
-  frac = std::abs(wf_[f] / (wf_[f-1] - wf_[f]));
-  double tf = frac * tm_[f-1] + (1.0 - frac) * tm_[f];
-
-  freq_array_[ZC] = 0.5 * (nzeros - 1.0) / (tf - ti);
-  // todo: Fix this into a better error estimate. 
-  freq_err_array_[ZC] = freq_array_[ZC] * sqrt(2) * (tm_[1] - tm_[0]) / (tf - ti);
-
-  */
-  ;
 }
 
 void Fid::CalcCentroidFreq()
 {
-  /*
-  // Find the peak power
-  double thresh = *std::max_element(psd_.begin(), psd_.end());
-  thresh *= centroid_thresh_;
-
-  // Find the indices for a window around the max
-  int it_i = std::distance(psd_.begin(), 
-    std::find_if(psd_.begin(), psd_.end(), 
-      [thresh](double x) {return x > thresh;}));
-
-  // reverse the iterators
-  int it_f = -1 * std::distance(psd_.rend(),
-    std::find_if(psd_.rbegin(), psd_.rend(), 
-      [thresh](double x) {return x > thresh;}));
-
-  // Now compute the power weighted average
-  double pwfreq = 0.0;
-  double pwfreq2 = 0.0;
-  double pwsum = 0.0;
-
-  for (int i = it_i; i < it_f; i++){
-    pwfreq += psd_[i] * fftfreq_[i];
-    pwfreq2 += psd_[i] * psd_[i] * fftfreq_[i];
-    pwsum  += psd_[i];
+  if (!FFTDone)return;
+  unsigned int m;
+  if (fid_size % 2 == 0) {
+    m = fid_size/2+1;
+  } else {
+    m = (fid_size+1)/2;
   }
+  for (unsigned int j=0;j<NBatch;j++){
+    // Find the peak power
+    //double thresh = *std::max_element(psd_.begin(), psd_.end());
+    double thresh = psd_[j*m+max_idx_fft_[j]];
+    thresh *= centroid_thresh_;
 
-  freq_err_array_[CN] = sqrt(pwfreq2 / pwsum - pow(pwfreq / pwsum, 2.0));
-  freq_array_[CN] = pwfreq / pwsum;
+    // Find the indices for a window around the max
+    int it_i = std::distance(psd_.begin()+j*m, 
+	std::find_if(psd_.begin()+j*m, psd_.begin()+(j+1)*m, 
+	  [thresh](double x) {return x > thresh;}));
 
-  */
-  ;
+    // reverse the iterators
+    int it_f = -1 * std::distance(psd_.rend(),
+	std::find_if(psd_.rbegin()+(NBatch-1-j)*m, psd_.rbegin()+(NBatch-j)*m, 
+	  [thresh](double x) {return x > thresh;}));
+
+    // Now compute the power weighted average
+    double pwfreq = 0.0;
+    double pwfreq2 = 0.0;
+    double pwsum = 0.0;
+
+    for (int i = it_i; i < it_f; i++){
+      pwfreq += psd_[i] * fftfreq_[i];
+      pwfreq2 += psd_[i] * psd_[i] * fftfreq_[i];
+      pwsum  += psd_[i];
+    }
+
+    freq_err_array_[j][CN] = sqrt(pwfreq2 / pwsum - pow(pwfreq / pwsum, 2.0));
+    freq_array_[j][CN] = pwfreq / pwsum;
+  }
 }
 
 
@@ -782,31 +798,43 @@ void Fid::CalcAnalyticalFreq()
   ;
 }
 
-/*
-double Fid::CalcLorentzianFreq()
-{
-  //Requires FFT
-  if (!FFTDone)return 0;
-  // Set the fit function
-  std::string fcn("[2] / (1 + ((x - [0]) / (0.5 * [1]))^2) + [3]");
-  f_fit_ = TF1("f_fit_", fcn.c_str(), fftfreq_[i_fft_], fftfreq_[f_fft_]);
-  f_fit_.SetParLimits(3,guess_[3]*0.8,guess_[3]*1.2);
-
-  // Set the parameter guesses
-  for (int i = 0; i < 4; i++){
-    f_fit_.SetParameter(i, guess_[i]);
-  }
-
-  FreqFit(f_fit_);
-
-  freq_array_[LZ] = f_fit_.GetParameter(0);
-
-  return freq_array_[LZ];
-}*/
 
 void Fid::CalcLorentzianFreq()
 {
+  //Requires FFT
+  if (!FFTDone)return;
+  unsigned int m;
+  if (fid_size % 2 == 0) {
+    m = fid_size/2+1;
+  } else {
+    m = (fid_size+1)/2;
+  }
+
+
+  // Set the fit function
+  for (unsigned int i=0 ; i<NBatch; i++){
+    // Now set up the polynomial phase fit
+    char fcnName[20];
+    sprintf(fcnName, "f_fit_%03d", i);
+    std::string fcn("[2] / (1 + ((x - [0]) / (0.5 * [1]))^2) + [3]");
+    f_fit_[i] = TF1(fcnName, fcn.c_str(), fftfreq_[i*m+i_fft_[i]], fftfreq_[i*m+f_fft_[i]]);
+//    f_fit_[i].SetParLimits(3,guess_[3]*0.8,guess_[3]*1.2);
+
+    // Set the parameter guesses
+/*    for (int i = 0; i < 4; i++){
+      f_fit_.SetParameter(i, guess_[i]);
+    }*/
+
+  }
+  FreqFit();
+  for (unsigned int i=0 ; i<NBatch; i++){
+    freq_array_[i][LZ] = f_fit_[i].GetParameter(0);
+  }
+}
+
   /*
+void Fid::CalcLorentzianFreq()
+{
   //Requires FFT
   if (!FFTDone)return 0;
   //Lorentzian function
@@ -835,9 +863,9 @@ void Fid::CalcLorentzianFreq()
   dsp::linear_fit(fftfreq_,psd_,i_fft_,f_fft_,3,parameter,res_);
   //change the parameter back
   freq_array_[LZ] = -parameter[1]*0.5/parameter[2];
-  */
   ;
 }
+  */
 
 void Fid::CalcSoftLorentzianFreq()
 {
@@ -889,16 +917,10 @@ void Fid::CalcExponentialFreq()
 
 void Fid::CalcPhaseFreq()
 {
-  /*
-  poln = 1;
+  unsigned int NPar = 2;
   //Requires FFT
-  if (!FFTDone)return 0;
+  if (!FFTDone)return;
 //  gr_time_series_ = TGraph(f_wf_ - i_wf_, &tm_[i_wf_], &phi_[i_wf_]);
-
-  // Now set up the polynomial phase fit
-  char fcn[20];
-  sprintf(fcn, "pol%d", poln);
-  f_fit_ = TF1("f_fit_", fcn,tm_[i_wf_],tm_[f_wf_]);
 
   // Adjust to ignore the edges if possible.
 //  int edge = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
@@ -908,50 +930,54 @@ void Fid::CalcPhaseFreq()
 //  }
 
   // Do the fit.
-  std::vector<double> ParList(poln+1);
-  dsp::linear_fit(tm_,phi_,i_wf_,f_wf_,poln+1,ParList,res_);
-  for (int i=0;i<=poln;i++){
-    f_fit_.SetParameter(i,ParList[i]);
+  dsp::linear_fit(tm_,phi_, i_wf_, f_wf_ , NPar,NBatch,fid_size, fit_parameters_, res_);
+  // Now set up the polynomial phase fit
+  for (unsigned int i=0 ; i<NBatch; i++){
+    // Now set up the polynomial phase fit
+    char fcn[20];
+    char fcnName[20];
+    sprintf(fcn, "pol%d", NPar-1);
+    sprintf(fcnName, "f_fit_%03d", i);
+    f_fit_[i] = TF1(fcnName, fcn,tm_[i*fid_size+i_wf_[i]],tm_[i*fid_size+f_wf_[i]-1]);
+    for (unsigned int j=0;j<NPar;j++){
+      f_fit_[i].SetParameter(j,fit_parameters_[i][j]);
+      freq_array_[i][PH] = fit_parameters_[i][1] / dsp::kTau;
+//      chi2_[i] = dsp::VecChi2(res_);
+//  std::cout <<"Linear Fit Result: " << fit_parameters_[i][1]/dsp::kTau<<std::endl;
+    }
   }
-
-  freq_array_[PH] = ParList[1] / dsp::kTau;
-//  freq_err_array_[PH] = f_fit_.GetParError(1) / dsp::kTau;
-  chi2_ = dsp::VecChi2(res_);
-
-//  std::cout <<"Linear Fit Result: " << ParList[1]/dsp::kTau<<std::endl;
-
-*/
-  ;
 }
 
 void Fid::CalcPhaseDerivFreq()
 {
-  /*
+  unsigned int NPar = poln+1;
   //Requires FFT
-  if (!FFTDone)return 0;
+  if (!FFTDone)return;
+//  gr_time_series_ = TGraph(f_wf_ - i_wf_, &tm_[i_wf_], &phi_[i_wf_]);
 
+  // Adjust to ignore the edges if possible.
+//  int edge = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
+//  if (f - i > 2 * edge) {
+//    i += edge;
+//    f -= edge;
+//  }
+
+  // Do the fit.
+  dsp::linear_fit(tm_,phi_, i_wf_, f_wf_ , NPar,NBatch,fid_size, fit_parameters_, res_);
   // Now set up the polynomial phase fit
-  char fcn[20];
-  sprintf(fcn, "pol%d", poln);
-  f_fit_ = TF1("f_fit_", fcn,tm_[i_wf_],tm_[f_wf_-1]);
-
-  //Fit
-  std::vector<double> ParList(poln+1);
-  dsp::linear_fit(tm_,phi_,i_wf_,f_wf_,poln+1,ParList,res_);
-  for (int i=0;i<=poln;i++){
-    f_fit_.SetParameter(i,ParList[i]);
+  for (unsigned int i=0 ; i<NBatch; i++){
+    // Now set up the polynomial phase fit
+    char fcn[20];
+    char fcnName[20];
+    sprintf(fcn, "pol%d", NPar-1);
+    sprintf(fcnName, "f_fit_%03d", i);
+    f_fit_[i] = TF1(fcnName, fcn,tm_[i*fid_size+i_wf_[i]],tm_[i*fid_size+f_wf_[i]-1]);
+    for (unsigned int j=0;j<NPar;j++){
+      f_fit_[i].SetParameter(j,fit_parameters_[i][j]);
+      freq_array_[i][PD] = fit_parameters_[i][1] / dsp::kTau;
+//      chi2_[i] = dsp::VecChi2(res_);
+    }
   }
-
-//  freq_err_array_[PH] = f_fit_.GetParError(1) / dsp::kTau;
-  chi2_ = dsp::VecChi2(res_);
-
-//  std::cout <<"Linear Fit Result: " << ParList[1]/dsp::kTau<<std::endl;
-
-  // Find the initial phase by looking at the function's derivative
-  freq_array_[PD] = f_fit_.Derivative(tm_[i_wf_]) / dsp::kTau;
-
-  */
-  ;
 } 
 
 void Fid::CalcSinusoidFreq()
@@ -993,9 +1019,7 @@ void Fid::CalcSinusoidFreq()
   freq_array_[SN] = f_fit_.GetParameter(0) / dsp::kTau;
   ireq_err_array_[SN] = f_fit_.GetParError(0) / dsp::kTau;
   chi2_ = f_fit_.GetChisquare();
-
-*/
-  ;
+  */
 }
 
 Method Fid::ParseMethod(const std::string& m)

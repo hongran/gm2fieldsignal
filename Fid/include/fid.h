@@ -108,7 +108,7 @@ class Fid {
   //Set noise and baselien by user
   void SetNoise(double NoiseValue);
   void SetBaseline(const std::vector<double>& bl);
-  void SetPoln(unsigned int N){ poln = N;}
+  void SetPoln(unsigned int N);
 
   // Frequency Extraction Methods
   void CalcZeroCountFreq();

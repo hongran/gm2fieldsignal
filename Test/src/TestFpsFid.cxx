@@ -24,68 +24,75 @@ int main(int argc,char ** argv){
   TFile* filein = new TFile(Form("/home/newg2/DataProduction/Nearline/ArtTFSDir/FpsFidGraphOut%05d_tier0.root",run),"read");
   TDirectory * d1 = (TDirectory*)filein->Get("PlotFixedProbeFullFid");
   gROOT->cd();
- 
-  for (unsigned int ProbeID=ProbeStart;ProbeID<ProbeStart+NBatch;ProbeID++){
-    TGraph *g = (TGraph*)d1->Get(Form("Event_%03d_probe_%03d",EventID,ProbeID));
-    //Get Arrays
-    auto X = g->GetX();
-    auto Y = g->GetY();
-    auto N = g->GetN();
-
-    std::cout << "Probe "<<ProbeID<<" Size "<<N<<std::endl;
-    for (unsigned int i=0;i<fid_size;i++){
-      V.push_back(Y[i]);
-      T.push_back(X[i]);
-    }
-  }
-
-  filein->Close();
-  delete filein;
-
-  std::cout << V.size()<<std::endl;
-  for (unsigned int j=0;j<V.size();j++){
-    gWf->SetPoint(j,T[j]+(j/fid_size)*(T[fid_size-1]-T[0]),V[j]);
-  }
-  gWf->SetName("Waveform");
 
   //Fid
-  
-  fid::Fid myFid(V,T[1]-T[0],NBatch,fid_size);
+
+  fid::Fid myFid(NBatch,fid_size);
   myFid.SetParameter("baseline_freq_thresh",500);
   myFid.SetParameter("start_amplitude",0.37);
-  myFid.SetParameter("filter_low_freq",500);
-  myFid.SetParameter("filter_high_freq",5000000);
-  myFid.SetParameter("fft_peak_width",40000);
+  myFid.SetParameter("filter_low_freq",20000);
+  myFid.SetParameter("filter_high_freq",80000);
+//  myFid.SetParameter("filter_low_freq",500);
+//  myFid.SetParameter("filter_high_freq",5000000);
+  myFid.SetParameter("fft_peak_width",5000);
   myFid.SetParameter("edge_width",2e-5);
   myFid.SetParameter("edge_ignore",6e-5);
   myFid.SetParameter("hyst_thresh",0.7);
-  
-  /*
-  for (int i=0;i<10;i++){
-    fid::Fid myFid3(V,T);
-    auto t0 = std::chrono::high_resolution_clock::now();
-  //  myFid3.Init("FFTOnly");
+  myFid.SetPoln(1);
+
+  for (unsigned int k=0;k<4;k++){
+    std::cout << "Event "<<EventID<<std::endl;
+    V.clear();
+    T.clear();
+    for (unsigned int ProbeID=ProbeStart;ProbeID<ProbeStart+NBatch;ProbeID++){
+      TGraph *g = (TGraph*)d1->Get(Form("Event_%03d_probe_%03d",EventID,ProbeID));
+      //Get Arrays
+      auto X = g->GetX();
+      auto Y = g->GetY();
+  //    auto N = g->GetN();
+  //    std::cout << "Probe "<<ProbeID<<" Size "<<N<<std::endl;
+      for (unsigned int i=0;i<fid_size;i++){
+	V.push_back(Y[i]);
+	T.push_back(X[i]);
+	//if (ProbeID==10)std::cout<<i<<" "<<Y[i]<<std::endl;
+      }
+    }
+
+    std::cout << V.size()<<std::endl;
+    if (EventID==3){
+      for (unsigned int j=0;j<V.size();j++){
+	gWf->SetPoint(j,T[j]+(j/fid_size)*(T[fid_size-1]-T[0]),V[j]);
+      }
+      gWf->SetName("Waveform");
+    }
+
+    /*
+       for (int i=0;i<10;i++){
+       fid::Fid myFid3(V,T);
+       auto t0 = std::chrono::high_resolution_clock::now();
+    //  myFid3.Init("FFTOnly");
     myFid3.Init("Standard");
-  //  myFid3.BaselineCorrection();
-  //  myFid3.FindFidRange();
-  //  myFid3.GuessFitParams();
-  //  myFid3.CalcSnrFFT();
+    //  myFid3.BaselineCorrection();
+    //  myFid3.FindFidRange();
+    //  myFid3.GuessFitParams();
+    //  myFid3.CalcSnrFFT();
     auto t1 = std::chrono::high_resolution_clock::now();
     auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
     double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
     std::cout << "Time = "<<t<<std::endl;
-  }*/
-  auto t0 = std::chrono::high_resolution_clock::now();
-  myFid.Init("Standard");
-  auto t1 = std::chrono::high_resolution_clock::now();
-  auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
-  double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
-  std::cout << "Time = "<<t<<std::endl;
-  myFid.Init("Standard");
-  auto t2 = std::chrono::high_resolution_clock::now();
-  auto dtn2 = t2.time_since_epoch() - t1.time_since_epoch();
-  double dt2 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn2).count();
-  std::cout << "Time = "<<dt2<<std::endl;
+    }*/
+    auto t0 = std::chrono::high_resolution_clock::now();
+    myFid.SetWf(V,T[1]-T[0],NBatch,fid_size);
+    myFid.Init("Standard");
+    auto t1 = std::chrono::high_resolution_clock::now();
+    auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
+    double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
+    std::cout << "Time = "<<t<<std::endl;
+    EventID++;
+  }
+  filein->Close();
+  delete filein;
+
 /*  std::cout<<"PD: " << myFid.GetFreq("PD")<<std::endl;
   std::cout<<"ZC: " << myFid.GetFreq("ZC")<<std::endl;
   auto t0lz = std::chrono::high_resolution_clock::now();
