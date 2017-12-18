@@ -596,15 +596,28 @@ std::vector<double> Processor::psd(const std::vector<cdouble>& v)
 
 std::vector<cdouble> Processor::window_filter(const std::vector<cdouble>& spectrum, const std::vector<double>& freq, double low, double high,unsigned int N, unsigned int NBatch)
 {
+  //window_filter*******************************************
+  //We could use thrust copy if necessary
   auto output = spectrum;
   auto interval = freq[1] - freq[0];
-  unsigned int i_start = std::floor((low - freq[0])/interval);
-  unsigned int i_end = std::floor((high - freq[0])/interval);
-  for (unsigned int i=0 ; i<spectrum.size() ; i++){
-    if (i<i_start || i>i_end){
-      output[i] = cdouble(0.0, 0.0);
-    }
+
+  unsigned int i_start = std::floor((low-freq[0])/interval);
+  unsigned int i_end = std::floor((high-freq[0])/interval);
+  //result vector 
+  thrust::device_vector<thrust::complex<double>> d_spectrum;
+
+  cdouble * h_data = reinterpret_cast<cdouble *>(&output[0]);
+  cdouble * d_data = (cdouble *)thrust::raw_pointer_cast(d_spectrum.data());
+  cudaMemcpy(d_data, h_data, sizeof(cdouble) * N*NBatch, cudaMemcpyHostToDevice);
+
+  //filter, revise
+  for(unsigned int j=0; j<NBatch; j++)
+  {
+    thrust::fill(d_spectrum.begin()+j*N,d_spectrum.begin()+j*N+i_start,thrust::complex<double>(0.0,0.0));
+    thrust::fill(d_spectrum.begin()+j*N+i_end,d_spectrum.begin()+(j+1)*N,thrust::complex<double>(0.0,0.0));
   }
+  cudaMemcpy(h_data, d_data, sizeof(cdouble) * N*NBatch, cudaMemcpyDeviceToHost);
+
   return output;
 }
 
@@ -631,9 +644,25 @@ std::vector<double> Processor::phase(const std::vector<double>& wf_re, const std
   thrust::transform(d_wf_im.begin(), d_wf_im.end(), d_wf_re.begin(), d_phase.begin(),ATan2());
 
   thrust::copy(d_phase.begin(),d_phase.end(),phase.begin());
+
+  // Now unwrap the phase
+  //Get the winding numbers
+
+  thrust::device_vector<double> d_phase_jumps(NBatch*N);
+  double *D_phase = (double *)thrust::raw_pointer_cast(d_phase.data());
+  double *D_phase_jumps = (double *)thrust::raw_pointer_cast(d_phase_jumps.data());
+  dim3 DimBlock2 (16);
+  dim3 DimGrid2 (NBatch/16+1);
+  FindUnwindingNumber<<<DimGrid2, DimBlock2>>>(D_phase,D_phase_jumps,N,NBatch,kMaxPhaseJump);
+
+  //Add the winding phases
+  thrust::transform(d_phase.begin(), d_phase.end(), d_phase_jumps.begin(), d_phase.begin(),ScaleAdd(kTau));
+  //Copy the unwinded phase back to host
+  thrust::copy(d_phase.begin(),d_phase.end(),phase.begin());
+  
   
   // Now unwrap the phase
-  double thresh = 0.5 * kTau;
+ /* double thresh = 0.5 * kTau;
   double m = 0.0;
   bool gave_warning = false;
 
@@ -672,7 +701,7 @@ std::vector<double> Processor::phase(const std::vector<double>& wf_re, const std
 
       m = *(it) - *(it - 1);
     }
-  }
+  }*/
   
   return phase;
 }
@@ -702,39 +731,112 @@ std::vector<double> Processor::envelope(const std::vector<double>& wf_re, const 
   return env;
 }
 
-// Helper function to get frequencies for FFT
-std::vector<double> fftfreq(const std::vector<double>& tm) 
+//****************************************************************************8
+void Processor::FindFitRange(unsigned int Length, unsigned int NBatch,double start_amplitude, double fft_peak_width,
+    std::vector<double>& psd,std::vector<double>&env,double interval,
+    std::vector<unsigned int>& iwf, std::vector<unsigned int>& fwf,
+    std::vector<unsigned int>& max_idx_fft,std::vector<unsigned int>& i_fft,std::vector<unsigned int>& f_fft, 
+    std::vector<double>& max_amp,std::vector<unsigned short>& health)
 {
-	int N = tm.size();
-	double dt = (tm[N-1] - tm[0]) / (N - 1); // sampling rate
+  max_amp.resize(NBatch);
+  iwf.resize(NBatch);
+  fwf.resize(NBatch);
+  //initialize MaxAmp vector
+  thrust::device_vector<double> d_MaxAmp(NBatch);
+  thrust::device_vector<unsigned int> d_iwf(NBatch);
+  thrust::device_vector<unsigned int> d_fwf(NBatch);
+  thrust::device_vector<double> d_env(NBatch*Length);
+  thrust::device_vector<double> d_psd(NBatch*Length);
 
-	return fftfreq(N, dt);
+  thrust::copy(env.begin(),env.end(),d_env.begin());
+  thrust::copy(psd.begin(),psd.end(),d_psd.begin());
+
+  double *D_env = (double *)thrust::raw_pointer_cast(d_env.data());
+  double *D_MaxAmp = (double *)thrust::raw_pointer_cast(d_MaxAmp.data());
+  unsigned int *D_iwf = (unsigned int *)thrust::raw_pointer_cast(d_iwf.data());
+  unsigned int *D_fwf = (unsigned int *)thrust::raw_pointer_cast(d_fwf.data());
+  dim3 DimBlock2 (16);
+  dim3 DimGrid2 (NBatch/16+1);
+  BatchFindRange<<<DimGrid2, DimBlock2>>>(D_env,D_MaxAmp,D_iwf,D_fwf,Length,NBatch,start_amplitude);
+  thrust::copy(d_MaxAmp.begin(),d_MaxAmp.end(),max_amp.begin());
+  thrust::copy(d_iwf.begin(),d_iwf.end(),iwf.begin());
+  thrust::copy(d_fwf.begin(),d_fwf.end(),fwf.begin());
+
+  for(unsigned int i=0; i<NBatch; i++)
+  {
+    if(iwf[i]>Length*0.95||iwf[i]>=fwf[i])
+    {
+      health[i]=0;
+    }
+    else
+    {
+      ;
+    }
+  }
+
+  //max_idx_fft and i_fft , f_fft 
+  max_idx_fft.resize(NBatch);
+  i_fft.resize(NBatch);
+  f_fft.resize(NBatch);
+  unsigned int fft_peak_index_width = static_cast<int>(fft_peak_width/interval);
+  unsigned int m;
+  if (Length % 2 == 0) {
+    m = Length/2+1;
+  } else {
+    m = (Length+1)/2;
+  }
+
+  thrust::device_vector<unsigned int> d_max_idx_fft(NBatch);
+  thrust::device_vector<unsigned int> d_i_fft(NBatch);
+  thrust::device_vector<unsigned int> d_f_fft(NBatch);
+
+  double *D_psd = (double *)thrust::raw_pointer_cast(d_psd.data());
+  unsigned int *D_max_idx_fft = (unsigned int *)thrust::raw_pointer_cast(d_max_idx_fft.data());
+  unsigned int *D_i_fft = (unsigned int *)thrust::raw_pointer_cast(d_i_fft.data());
+  unsigned int *D_f_fft = (unsigned int *)thrust::raw_pointer_cast(d_f_fft.data());
+  BatchFindFFTRange<<<DimGrid2, DimBlock2>>>(D_psd,D_max_idx_fft,D_i_fft,D_f_fft,m,NBatch,fft_peak_index_width);
+  thrust::copy(d_max_idx_fft.begin(),d_max_idx_fft.end(),max_idx_fft.begin());
+  thrust::copy(d_i_fft.begin(),d_i_fft.end(),i_fft.begin());
+  thrust::copy(d_f_fft.begin(),d_f_fft.end(),f_fft.begin());
+
 }
 
-std::vector<double> fftfreq(const int N, const double dt)
+// Helper function to get frequencies for FFT
+std::vector<double> fftfreq(const std::vector<double>& tm, unsigned int NBatch) 
 {
-	// Instantiate return vector.
-	std::vector<double> freq;
+  int N = tm.size();
+  double dt = (tm[N-1] - tm[0]) / (N - 1); // sampling rate
 
-	// Handle both even and odd cases properly.
-	if (N % 2 == 0) {
+  return fftfreq(N, dt,NBatch);
+}
 
-		freq.resize(N/2 + 1);
-		
-		for (unsigned int i = 0; i < freq.size(); ++i) {
-			freq[i] = i / (dt * N);
-		}
+std::vector<double> fftfreq(const int N, const double dt, unsigned int NBatch)
+{
+  // Instantiate return vector.
+  std::vector<double> freq;
 
-	} else {
+  // Handle both even and odd cases properly.
+  unsigned int m; // size of fft_freq
+  // Handle both even and odd cases properly.
+  if (N % 2 == 0) {
+    m = N/2+1;
+    freq.resize(m);
+    for(unsigned int j=0; j<NBatch; j++){ 
+      for (unsigned int i = 0; i < m; i++) {
+	freq[i+j*m] = i / (dt * N);
+      }
+    }
+  } else {
+    m = (N+1)/2;
+    freq.resize(m);
+    for(unsigned int j=0; j<NBatch; j++){ 
+      for (unsigned int i = 0; i < m; i++) {
+	freq[i+j*m] = i / (dt * N);
+      }
+    }
+  }
 
-		freq.resize((N + 1) / 2);
-
-		for (unsigned int i = 0; i < freq.size(); ++i){
-			freq[i] = i / (dt * N);
-		}
-	}
-
-	return freq;
+  return freq;
 }
 
 int convolve(const std::vector<double>& v, const std::vector<double>& filter, std::vector<double>& res)
@@ -924,126 +1026,6 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
   return 0;
 }
 
-//****************************************************************************8
-
-void FindFidRange(double start_amplitude_,double edge_ignore_,double Length, double NBatch,std::vector<double>& max_amp_,std::vector<double>&filtered_wf_,std::vector<double>&tm_,std::vector<double>&i_wf_,std::vector<double>&f_wf_,std::vector<double>&health_)
-{
-  // Find the starting and ending points
-/*  bool checks_out;
-  std::vector<double> thresh;
-  std::transform(max_amp_.begin(),max_amp_.end(),thresh.begin(),std::bind1st(std::multiplies<double>(),start_amplitude_));
-  int IgnoreRange = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
-  //check each signal and get the range
-  auto wfptr = filtered_wf_.begin();
-  std::vector<double>::iterator it_i;
-  std::vector<double>::iterator it_f;
-  std::vector<double>::iterator mm;
-  for(int i=0;i<NBatch;i++)
-  {
-    checks_out = false;
-    // Find the first element with magnitude larger than thresh
-    while (!checks_out) {
-      // Check if the point is above threshold.
-      it_i = std::find_if(std::next(wfptr,IgnoreRange), std::next(wfptr,Length-1),
-	  [thresh](double x) {
-	  return std::abs(x) > thresh[i];
-	  });
-
-      // Make sure the point is not with one of the vector's end.
-      if ((it_i != std::next(wfptr,Length-1)) && (it_i + 1 != std::next(wfptr,Length-1))) {
-
-	// Check if the next point is also over threshold.
-	checks_out = std::abs(*(it_i + 1)) > thresh[i];
-
-	// Increase the comparison starting point.
-	it_i = it_i + 1;
-
-	// Turn the iterator into an index
-	if (checks_out) {
-	  i_wf_[i] = std::distance(wfptr, it_i);
-	}
-
-      } else {
-
-	// If we have reached the end, mark it as the last.
-	i_wf_[i] =Length;
-	break;
-      }
-    }
-    // Find the next element with magnitude lower than thresh
-    auto it_2 = std::find_if(std::next(wfptr,i_wf_[i]-1), std::next(wfptr,Length-1),
-	[thresh](double x) {
-	return std::abs(x) < 0.8 * thresh[i];
-	});
-
-    if ((it_2 != std::next(wfptr,Length-1)) && (it_2 + 1 != std::next(wfptr,Length-1))) {
-
-      checks_out = false;
-
-    } else {
-
-      f_wf_[i] = Length;
-      checks_out = true;
-    }
-
-    while (!checks_out) {
-
-      // Find the range around a peak.
-      it_i = std::find_if(it_2, std::next(wfptr,Length-1),
-	  [thresh](double x) {
-	  return std::abs(x) > 0.8 * thresh[i];
-	  });
-
-      auto it_f = std::find_if(it_i + 1, std::next(wfptr,Length-1),
-	  [thresh](double x) {
-	  return std::abs(x) < 0.8 * thresh[i];
-	  });
-
-      // Now check if the peak actually made it over threshold.
-      if ((it_i != std::next(wfptr,Length-1)) && (it_f != std::next(wfptr,Length-1))) {
-
-	mm[i] = std::minmax_element(it_i, it_f);
-
-	if ((*mm[i].first < -thresh[j]) || (*mm[i].second > thresh[j])) {
-
-	  it_2 = it_f;
-
-	} else {
-
-	  checks_out = true;
-	}
-
-	// Turn the iterator into an index
-	if (checks_out) {
-	  f_wf_[j] = std::distance(std::next(wfptr,Length-1), it_f);
-	}
-
-      } else {
-
-	f_wf_[j] = std::distance(wfptr, std::next(wfptr,Length-1));
-	break;
-      }
-    }
-
-    if (f_wf_[j] > Length-IgnoreRange){
-      f_wf_[j] = Length-IgnoreRange;
-    }
-
-    // Gradients can cause a waist in the amplitude.
-    // Mark the signal as bad if it didn't find signal above threshold.
-    if (i_wf_[j] > Length* 0.95 || i_wf_[j] >= f_wf_[j]) {
-
-      health_[j] = 0.0;
-
-      i_wf_[j] = 0;
-      f_wf_[j] = Length * 0.01;
-    }
-  }
-  wfptr=std::next(wfptr,Length);
-  */
-}
-
-
 struct im_harmonic
 {
   im_harmonic(){}
@@ -1165,19 +1147,19 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
 	std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,
 	std::vector<unsigned int>& iwf, std::vector<unsigned int>& fwf,
 	std::vector<unsigned int> max_idx_fft,std::vector<unsigned int>& i_fft,std::vector<unsigned int>& f_fft, 
-	std::vector<double> max_amp,std::vector<unsigned short>& health,
+	std::vector<double>& max_amp,std::vector<unsigned short>& health,
 	std::vector<std::vector<double>>& FreqResArray,std::vector<std::vector<double>>& FreqErrResArray,
 	std::vector<std::vector<double>>& FitPars,std::vector<double>& ResidualOut)
 {
   auto t0 = std::chrono::high_resolution_clock::now();
   //CalcFftFreq*********************************************
   double dt=tm[1]-tm[0];
-  //Resize freq to the same dimension
-  freq.resize(tm.size());
   unsigned int m; // size of fft_freq
   // Handle both even and odd cases properly.
   if (Length % 2 == 0) {
     m = Length/2+1;
+    //Resize freq to the same dimension
+    freq.resize(m*NBatch);
     for(unsigned int j=0; j<NBatch; j++){ 
       for (unsigned int i = 0; i < m; i++) {
 	freq[i+j*m] = i / (dt * Length);
@@ -1185,6 +1167,8 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
     }
   } else {
     m = (Length+1)/2;
+    //Resize freq to the same dimension
+    freq.resize(m*NBatch);
     for(unsigned int j=0; j<NBatch; j++){ 
       for (unsigned int i = 0; i < m; i++) {
 	freq[i+j*m] = i / (dt * Length);
@@ -1405,7 +1389,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   {
     if(iwf[i]>Length*0.95||iwf[i]>=fwf[i])
     {
-      health[i]=0.0;
+      health[i]=0;
     }
     else
     {

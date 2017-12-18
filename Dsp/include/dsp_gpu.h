@@ -266,6 +266,11 @@ class Processor{
     std::vector<double> psd(const std::vector<cdouble>& v);
     std::vector<double> phase(const std::vector<double>& wf_re,const std::vector<double>& wf_im,unsigned int N, unsigned int NBatch=1);
     std::vector<double> envelope(const std::vector<double>& wf_re, const std::vector<double>& wf_im);	
+    void FindFitRange(unsigned int Length, unsigned int NBatch,double start_amplitude, double fft_peak_width,
+	std::vector<double>& psd,std::vector<double>&env,double interval,
+	std::vector<unsigned int>& iwf, std::vector<unsigned int>& fwf,
+	std::vector<unsigned int>& max_idx_fft,std::vector<unsigned int>& i_fft,std::vector<unsigned int>& f_fft, 
+	std::vector<double>& max_amp,std::vector<unsigned short>& health);
   private:
     unsigned int FFTSize;
     unsigned int batch;
@@ -274,8 +279,8 @@ class Processor{
     cufftHandle planZ2D;
 };
 
-std::vector<double> fftfreq(const std::vector<double>& tm);
-std::vector<double> fftfreq(const int N, const double dt);
+std::vector<double> fftfreq(const std::vector<double>& tm,unsigned int NBatch=1);
+std::vector<double> fftfreq(const int N, const double dt,unsigned int NBatch=1);
 std::vector<double> normalized_gradient(int npoints, int poln=1); 
 
 /*
@@ -307,7 +312,7 @@ class IntegratedProcessor{
 	std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,
 	std::vector<unsigned int>& iwf, std::vector<unsigned int>& fwf,
 	std::vector<unsigned int> max_idx_fft,std::vector<unsigned int>& i_fft,std::vector<unsigned int>& f_fft, 
-	std::vector<double> max_amp,std::vector<unsigned short>& health,
+	std::vector<double>& max_amp,std::vector<unsigned short>& health,
 	std::vector<std::vector<double>>& FreqResArray,std::vector<std::vector<double>>& FreqErrResArray,
 	std::vector<std::vector<double>>& FitPars,std::vector<double>& ResidualOut);
 

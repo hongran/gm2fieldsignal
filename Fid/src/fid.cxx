@@ -3,14 +3,14 @@
 
 namespace fid {
 
-Fid::Fid(unsigned int tNBatch, unsigned int tSize):/*theProcessor(tNBatch,tSize),*/theIntegratedProcessor(tNBatch,tSize)
+Fid::Fid(unsigned int tNBatch, unsigned int tSize):theProcessor(tNBatch,tSize),theIntegratedProcessor(tNBatch,tSize)
 {
   NBatch = tNBatch;
   fid_size = tSize;
   FFTDone = false;
 }
 
-Fid::Fid(const std::vector<double>& wf, const std::vector<double>& tm):/*theProcessor(1,wf.size()),*/theIntegratedProcessor(1,wf.size())
+Fid::Fid(const std::vector<double>& wf, const std::vector<double>& tm):theProcessor(1,wf.size()),theIntegratedProcessor(1,wf.size())
 {
   NBatch = 1;
   fid_size = wf.size();
@@ -20,7 +20,7 @@ Fid::Fid(const std::vector<double>& wf, const std::vector<double>& tm):/*theProc
   tm_ = tm;
 }
 
-Fid::Fid(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize):/*theProcessor(1,wf.size()),*/theIntegratedProcessor(tNBatch,tSize)
+Fid::Fid(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigned int tSize):theProcessor(1,wf.size()),theIntegratedProcessor(tNBatch,tSize)
 {
   NBatch = tNBatch;
   fid_size = tSize;;
@@ -38,7 +38,7 @@ Fid::Fid(const std::vector<double>& wf, double dt, unsigned int tNBatch, unsigne
   }
 }
 
-Fid::Fid(const std::vector<double>& wf):/*theProcessor(1,wf.size()),*/theIntegratedProcessor(1,wf.size())
+Fid::Fid(const std::vector<double>& wf):theProcessor(1,wf.size()),theIntegratedProcessor(1,wf.size())
 {
   NBatch = 1;
   fid_size = wf.size();
@@ -65,7 +65,7 @@ void Fid::SetWf(const std::vector<double>& wf, double dt, unsigned int tNBatch, 
   //Renew parameters
   if ((tNBatch != NBatch) && (tSize != fid_size) ){
     theIntegratedProcessor = dsp::IntegratedProcessor(tNBatch,tSize);
-//    theProcessor = dsp::Processor(tNBatch,tSize);
+    theProcessor = dsp::Processor(tNBatch,tSize);
   }
   NBatch = tNBatch;
   fid_size = tSize;;
@@ -135,8 +135,9 @@ void Fid::Init(std::string Option)
 
   // Waveform characteristics
   mean_ = std::vector<double>(NBatch,-1);
+  rms_ = std::vector<double>(NBatch,-1);
   noise_ = std::vector<double>(NBatch,-1);
-  snr_ = std::vector<double>(NBatch,-1);
+  snr_ = std::vector<double>(NBatch,1e7);
   max_amp_ = std::vector<double>(NBatch,-1);
   act_length_ = std::vector<double>(NBatch,-1); 
   health_ = std::vector<unsigned short>(NBatch,100); 
@@ -153,38 +154,38 @@ void Fid::Init(std::string Option)
   gr_freq_series_ = std::vector<TGraph>(NBatch);
 
   if (Option.compare("Speed")==0){
-/*  //Test Time cost
-  auto t0 = std::chrono::high_resolution_clock::now();
+  //Test Time cost
+//  auto t0 = std::chrono::high_resolution_clock::now();
     // Initialize the Fid for analysis
     CenterFid();
-    CalcNoise();
+    CalcEdgeNoise();
     CalcMaxAmp();
-    if (noise_>0.0){
-      snr_ = max_amp_ / noise_;
-    }else{
-      snr_ = 1e7; // If noise is not set, snr is set to very high
+    for (unsigned int i=0;i<NBatch;i++){
+      if (noise_[i]>0.0){
+	snr_[i] = max_amp_[i] / noise_[i];
+      }else{
+	snr_[i] = 1e7; // If noise is not set, snr is set to very high
+      }
     }
     FindFidRange();
 
     freq_method_ = ZC;
     //Calculate Frequncy
     CalcFreq();
-  auto t1 = std::chrono::high_resolution_clock::now();
-  auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
-  double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
+//  auto t1 = std::chrono::high_resolution_clock::now();
+//  auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
+//  double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
   //std::cout << "Time = "<<t<<std::endl;
 //  std::cout << "Freq = "<<freq_array_[ZC]<<std::endl;
 //  std::cout << "EdgeWidth = "<<edge_width_<<std::endl;
   //std::cout << "Range = "<<tm_[i_wf_] <<" "<<tm_[f_wf_]<<std::endl;
-  */
-    ;
   }else if (Option.compare("Standard")==0){
     theIntegratedProcessor.Process(wf_,tm_,fftfreq_,
 	filtered_wf_, wf_im_ ,baseline_,
 	psd_, phi_ , env_,
 	i_wf_,f_wf_, max_idx_fft_,i_fft_,f_fft_, 
 	max_amp_,health_,freq_array_,freq_err_array_,fit_parameters_,res_);
-    std::cout <<"Initialization Done"<<std::endl;
+    FFTDone = true;
     unsigned int NPar = fit_parameters_[0].size();
     for (unsigned int i=0 ; i<NBatch; i++){
       // Now set up the polynomial phase fit
@@ -197,79 +198,15 @@ void Fid::Init(std::string Option)
 	f_fit_[i].SetParameter(j,fit_parameters_[i][j]);
       }
     }
-    /*CallFFT();
-    CalcPowerEnvAndPhase();
+    std::cout <<"Initialization Done"<<std::endl;
+    /*
     BaselineCorrection();
-    CalcMaxAmp();
-    FindFidRange();
-    GuessFitParams();
-    CalcNoise();
-    if (noise_>0.0){
-      snr_ = max_amp_ / noise_;
-    }else{
-      snr_ = 1e7;// If noise is not set, snr is set to very high
-    }
-
     freq_method_ = PH;
     CalcFreq();*/
     ;
   }else if (Option.compare("FFTOnly")==0){
-    /*CallFFT();
+    CallFFT();
     CalcPowerEnvAndPhase();
-    */
-    ;
-  }else if (Option.compare("Old")==0){
-    ;
-  /*  CenterFid();
-    CalcNoise();
-    CalcMaxAmp();
-    if (noise_>0.0){
-      snr_ = max_amp_ / noise_;
-    }else{
-      snr_ = 1e7;// If noise is not set, snr is set to very high
-    }
-    FindFidRange();
-
-    //Get Frequency vector
-    CalcFftFreq();
-    // Get the fft of the waveform first.
-    fid_fft_ = dsp::rfft(wf_);
-
-    //Filtered fft spectrum
-    auto fid_fft_filtered_ = dsp::window_filter(fid_fft_,fftfreq_,filter_low_freq_,filter_high_freq_);
-
-    // Apply square filter and reverse fft to get the filtered waveform
-    filtered_wf_ = dsp::irfft(fid_fft_filtered_, wf_.size() % 2 == 1);
-
-    // Now get the imaginary harmonic complement to the waveform.
-    wf_im_ = dsp::hilbert(wf_);
-
-    // Get the baseline by applying low-pass filter
-    baseline_ = dsp::irfft(dsp::window_filter(fid_fft_,fftfreq_,0,baseline_freq_thresh_), wf_.size() % 2 == 1);
-
-    psd_ = dsp::norm(fid_fft_);
-    phi_ = dsp::phase(wf_, wf_im_);
-    env_ = dsp::envelope(wf_, wf_im_);
-
-    // find max index and set the fit window
-    // Must rule out the constant component psd_[0]
-    max_idx_fft_ = std::distance(psd_.begin(),
-	std::max_element(psd_.begin()+1, psd_.end()));
-
-    double interval = fftfreq_[1] - fftfreq_[0];
-    unsigned int fft_peak_index_width = static_cast<int>(fft_peak_width_/interval);
-
-    if (max_idx_fft_ < fft_peak_index_width) i_fft_ = 1;  
-    else i_fft_ = max_idx_fft_ - fft_peak_index_width ;
-
-    f_fft_ = max_idx_fft_ + fft_peak_index_width;
-    if (f_fft_ > psd_.size()) f_fft_ = psd_.size();
-
-    FFTDone = true;
-    GuessFitParams();
-
-    freq_method_ = PH;
-    CalcFreq();*/
   }
 
   //Calculate health
@@ -298,16 +235,15 @@ void Fid::Init(std::string Option)
 
 void Fid::CenterFid()
 {
-  ;
-  /*
-  int w = static_cast<int>(edge_width_/(tm_[1]-tm_[0]));
-  double sum  = std::accumulate(wf_.begin(), wf_.begin() + w, 0.0);
-  double avg = sum / w; // to pass into lambda
-  mean_ = avg; // save to class
-  //std::cout <<"Baseline " << avg <<std::endl;
+  for (unsigned int i=0;i<NBatch;i++){
+    int w = static_cast<int>(edge_width_/(tm_[1]-tm_[0]));
+    double sum  = std::accumulate(wf_.begin()+i*fid_size, wf_.begin()+i*fid_size + w, 0.0);
+    double avg = sum / w; // to pass into lambda
+    mean_[i] = avg; // save to class
+    //std::cout <<"Baseline " << avg <<std::endl;
 
-  std::for_each(wf_.begin(), wf_.end(), [avg](double& x){ x -= avg; });
-  */
+    std::for_each(wf_.begin()+i*fid_size, wf_.begin()+(i+1)*fid_size, [avg](double& x){ x -= avg; });
+  }
 }
 
 void Fid::BaselineCorrection()
@@ -321,37 +257,37 @@ void Fid::ConstBaselineCorrection(double ConstBaseline){
   dsp::VecShift(-ConstBaseline, wf_);
 }
 
-void Fid::CalcNoise()
+void Fid::CalcEdgeNoise()
 {
-  ;
-  /*
-  // Grab a new handle to the noise window width for aesthetics.
-  int i = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
-  int f = static_cast<int>(edge_width_/(tm_[1]-tm_[0])) + i;
+  for (unsigned int j=0;j<NBatch;j++){
+    // Grab a new handle to the noise window width for aesthetics.
+    int i = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
+    int f = static_cast<int>(edge_width_/(tm_[1]-tm_[0])) + i;
 
-  // Find the noise level in the head and tail.
-  double head = dsp::stdev(wf_.begin() + i, wf_.begin() + f);
-  double tail = dsp::stdev(wf_.rbegin() + i, wf_.rbegin() + f);
+    // Find the noise level in the head and tail.
+    double head = dsp::stdev(wf_.begin()+j*fid_size + i, wf_.begin()+j*fid_size + f);
+    double tail = dsp::stdev(wf_.begin()+j*fid_size -f, wf_.begin()+j*fid_size -i);
 
-  // Take the smaller of the two.
-  noise_ = (tail < head) ? (tail) : (head);
-  */
+    // Take the smaller of the two.
+    noise_[j] = (tail < head) ? (tail) : (head);
+  }
 }
 
-double Fid::CalcRms()
+void Fid::CalcRms(double start,double end)
 {
-  /*
-  int ignore = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
+  unsigned int istart = static_cast<unsigned int>(start/(tm_[1]-tm_[0]));
+  unsigned int iend = static_cast<unsigned int>(end/(tm_[1]-tm_[0]));
+  if (iend>=fid_size || istart>=fid_size || iend<=istart) return;
 
-  // Find the rms of the entire range, excluding the edge_ignore
-  return dsp::stdev(wf_.begin() + ignore, wf_.end() - ignore);
-  */
-  return -1;
+  
+  for (unsigned int i=0;i<NBatch;i++){
+    // Find the rms of the selected range
+    rms_[i] = dsp::stdev(wf_.begin()+i*fid_size+istart, wf_.begin()+i*fid_size+iend);
+  }
 }
 
 void Fid::CalcMaxAmp()
 {
-  /*
   //Waveform select
   std::vector<double>* wfptr;
   if (FFTDone){
@@ -359,28 +295,21 @@ void Fid::CalcMaxAmp()
   }else{
     wfptr = &wf_;
   }
-  auto mm = std::minmax_element(wfptr->begin(), wfptr->end());
+  for (unsigned int i=0;i<NBatch;i++){
+    auto mm = std::minmax_element(wfptr->begin()+i*fid_size, wfptr->begin()+(i+1)*fid_size);
 
-  if (std::abs(*mm.first) > std::abs(*mm.second)) {
-
-    max_amp_ = std::abs(*mm.first);
-
-  } else {
-
-    max_amp_ = std::abs(*mm.second);
+    if (std::abs(*mm.first) > std::abs(*mm.second)) {
+      max_amp_[i] = std::abs(*mm.first);
+    } else {
+      max_amp_[i] = std::abs(*mm.second);
+    }
   }
-  */
 }
 
 
 void Fid::FindFidRange()
 {
-  ;
-  /*
   // Find the starting and ending points
-  double thresh = start_amplitude_ * max_amp_;
-  bool checks_out = false;
-
   //Waveform select
   std::vector<double>* wfptr;
   if (FFTDone){
@@ -391,107 +320,113 @@ void Fid::FindFidRange()
 
   // Find the first element with magnitude larger than thresh
   int IgnoreRange = static_cast<int>(edge_ignore_/(tm_[1]-tm_[0]));
-  auto it_1 = wfptr->begin() + IgnoreRange;
 
-  while (!checks_out) {
 
-    // Check if the point is above threshold.
-    auto it_i = std::find_if(it_1, wfptr->end(),
-      [thresh](double x) {
-        return std::abs(x) > thresh;
-    });
+  for (unsigned int i=0;i<NBatch;i++){
+    double thresh = start_amplitude_ * max_amp_[i];
+    bool checks_out = false;
 
-    // Make sure the point is not with one of the vector's end.
-    if ((it_i != wfptr->end()) && (it_i + 1 != wfptr->end())) {
+    auto it_1 = wfptr->begin()+i*fid_size + IgnoreRange;
 
-      // Check if the next point is also over threshold.
-      checks_out = std::abs(*(it_i + 1)) > thresh;
+    while (!checks_out) {
 
-      // Increase the comparison starting point.
-      it_1 = it_i + 1;
+      // Check if the point is above threshold.
+      auto it_i = std::find_if(it_1, wfptr->begin()+(i+1)*fid_size,
+	  [thresh](double x) {
+	  return std::abs(x) > thresh;
+	  });
 
-      // Turn the iterator into an index
-      if (checks_out) {
-        i_wf_ = std::distance(wfptr->begin(), it_i);
-      }
+      // Make sure the point is not with one of the vector's end.
+      if ((it_i != wfptr->begin()+(i+1)*fid_size) && (it_i + 1 != wfptr->begin()+(i+1)*fid_size)) {
 
-    } else {
+	// Check if the next point is also over threshold.
+	checks_out = std::abs(*(it_i + 1)) > thresh;
 
-      // If we have reached the end, mark it as the last.
-      i_wf_ = std::distance(wfptr->begin(), wfptr->end());
-      break;
-    }
-  }
+	// Increase the comparison starting point.
+	it_1 = it_i + 1;
 
-  // Find the next element with magnitude lower than thresh
-  auto it_2 = std::find_if(wfptr->begin() + i_wf_, wfptr->end(),
-      [thresh](double x) {
-        return std::abs(x) < 0.8 * thresh;
-  });
-
-  if ((it_2 != wfptr->end()) && (it_2 + 1 != wfptr->end())) {
-
-    checks_out = false;
-
-  } else {
-
-    f_wf_ = std::distance(wfptr->begin(), wfptr->end());
-    checks_out = true;
-  }
-
-  while (!checks_out) {
-
-    // Find the range around a peak.
-    auto it_i = std::find_if(it_2, wfptr->end(),
-      [thresh](double x) {
-        return std::abs(x) > 0.8 * thresh;
-    });
-
-    auto it_f = std::find_if(it_i + 1, wfptr->end(),
-      [thresh](double x) {
-        return std::abs(x) < 0.8 * thresh;
-    });
-
-    // Now check if the peak actually made it over threshold.
-    if ((it_i != wfptr->end()) && (it_f != wfptr->end())) {
-
-      auto mm = std::minmax_element(it_i, it_f);
-
-      if ((*mm.first < -thresh) || (*mm.second > thresh)) {
-
-        it_2 = it_f;
+	// Turn the iterator into an index
+	if (checks_out) {
+	  i_wf_[i] = std::distance(wfptr->begin()+i*fid_size, it_i);
+	}
 
       } else {
 
-        checks_out = true;
+	// If we have reached the end, mark it as the last.
+	i_wf_[i] = std::distance(wfptr->begin()+i*fid_size, wfptr->begin()+(i+1)*fid_size);
+	break;
       }
+    }
 
-      // Turn the iterator into an index
-      if (checks_out) {
-        f_wf_ = std::distance(wfptr->begin(), it_f);
-      }
+    // Find the next element with magnitude lower than thresh
+    auto it_2 = std::find_if(wfptr->begin()+i*fid_size + i_wf_[i], wfptr->begin()+(i+1)*fid_size,
+	[thresh](double x) {
+	return std::abs(x) < 0.8 * thresh;
+	});
+
+    if ((it_2 != wfptr->begin()+(i+1)*fid_size) && (it_2 + 1 != wfptr->begin()+(i+1)*fid_size)) {
+
+      checks_out = false;
 
     } else {
 
-      f_wf_ = std::distance(wfptr->begin(), wfptr->end());
-      break;
+      f_wf_[i] = std::distance(wfptr->begin()+i*fid_size, wfptr->begin()+(i+1)*fid_size);
+      checks_out = true;
+    }
+
+    while (!checks_out) {
+
+      // Find the range around a peak.
+      auto it_i = std::find_if(it_2, wfptr->begin()+(i+1)*fid_size,
+	  [thresh](double x) {
+	  return std::abs(x) > 0.8 * thresh;
+	  });
+
+      auto it_f = std::find_if(it_i + 1, wfptr->begin()+(i+1)*fid_size,
+	  [thresh](double x) {
+	  return std::abs(x) < 0.8 * thresh;
+	  });
+
+      // Now check if the peak actually made it over threshold.
+      if ((it_i != wfptr->begin()+(i+1)*fid_size) && (it_f != wfptr->begin()+(i+1)*fid_size)) {
+
+	auto mm = std::minmax_element(it_i, it_f);
+
+	if ((*mm.first < -thresh) || (*mm.second > thresh)) {
+
+	  it_2 = it_f;
+
+	} else {
+
+	  checks_out = true;
+	}
+
+	// Turn the iterator into an index
+	if (checks_out) {
+	  f_wf_[i] = std::distance(wfptr->begin()+i*fid_size, it_f);
+	}
+
+      } else {
+
+	f_wf_[i] = std::distance(wfptr->begin()+i*fid_size, wfptr->begin()+(i+1)*fid_size);
+	break;
+      }
+    }
+
+    if (f_wf_[i] > fid_size-IgnoreRange){
+      f_wf_[i] = fid_size-IgnoreRange;
+    }
+
+    // Gradients can cause a waist in the amplitude.
+    // Mark the signal as bad if it didn't find signal above threshold.
+    if (i_wf_[i] > fid_size * 0.95 || i_wf_[i] >= f_wf_[i]) {
+
+      health_[i] = 0;
+
+      i_wf_[i] = 0;
+      f_wf_[i] = 1;
     }
   }
-
-  if (f_wf_ > wfptr->size()-IgnoreRange){
-    f_wf_ = wfptr->size()-IgnoreRange;
-  }
-
-  // Gradients can cause a waist in the amplitude.
-  // Mark the signal as bad if it didn't find signal above threshold.
-  if (i_wf_ > wfptr->size() * 0.95 || i_wf_ >= f_wf_) {
-
-    health_ = 0.0;
-
-    i_wf_ = 0;
-    f_wf_ = wfptr->size() * 0.01;
-  }
-  */
 }
 
 double Fid::GetFreq(const std::string& method_name, unsigned int Index)
@@ -581,18 +516,16 @@ void Fid::CalcFreq()
 
 void Fid::CallFFT()
 {
-  ;
-  /*
   //Get Frequency vector
   CalcFftFreq();
   // Get the fft of the waveform first.
-  fid_fft_ = dsp::rfft(wf_);
+  fid_fft_ = theProcessor.rfft(wf_,fid_size,NBatch);
 
   //Filtered fft spectrum
-  auto fid_fft_filtered_ = dsp::window_filter(fid_fft_,fftfreq_,filter_low_freq_,filter_high_freq_);
+  auto fid_fft_filtered_ = theProcessor.window_filter(fid_fft_,fftfreq_,filter_low_freq_,filter_high_freq_,fid_size,NBatch);
 
   // Apply square filter and reverse fft to get the filtered waveform
-  filtered_wf_ = dsp::irfft(fid_fft_filtered_, wf_.size() % 2 == 1);
+  filtered_wf_ = theProcessor.irfft(fid_fft_filtered_ ,fid_size,NBatch);
 
   // Now get the imaginary harmonic complement to the waveform.
   for (auto it = fid_fft_filtered_.begin() + 1; it != fid_fft_filtered_.end(); ++it) {
@@ -600,48 +533,33 @@ void Fid::CallFFT()
   }
 
   //wf_im_ = dsp::irfft(fid_fft_filtered_, wf_.size() % 2 == 1);
-  wf_im_ = dsp::irfft(fid_fft_filtered_, wf_.size() % 2 == 1);
+  wf_im_ = theProcessor.irfft(fid_fft_filtered_,fid_size,NBatch);
 
   // Get the baseline by applying low-pass filter
-  auto baseline_fft = dsp::window_filter(fid_fft_,fftfreq_,0,baseline_freq_thresh_);
+  auto baseline_fft = theProcessor.window_filter(fid_fft_,fftfreq_,0,baseline_freq_thresh_,fid_size,NBatch);
   //std::vector<dsp::cdouble> baseline_fft(fid_fft_.size());
   //baseline_fft[0] = fid_fft_[0]-fid_fft_[1];
-  baseline_ = dsp::irfft(baseline_fft, wf_.size() % 2 == 1);
+  baseline_ = theProcessor.irfft(baseline_fft,fid_size,NBatch);
 
   FFTDone = true;
-  */
 }
 
 void Fid::CalcPowerEnvAndPhase()
 {
-  ;
-  /*
   // Now we can get power, envelope and phase.
-  psd_ = dsp::norm(fid_fft_);
-  phi_ = dsp::phase(filtered_wf_, wf_im_);
-  env_ = dsp::envelope(filtered_wf_, wf_im_);
+  psd_ = theProcessor.psd(fid_fft_);
+  phi_ = theProcessor.phase(filtered_wf_, wf_im_,fid_size,NBatch);
+  env_ = theProcessor.envelope(filtered_wf_, wf_im_);
+  theProcessor.FindFitRange(fid_size,NBatch,start_amplitude_,fft_peak_width_,
+      psd_,env_,fftfreq_[1]-fftfreq_[0],
+      i_wf_,f_wf_,max_idx_fft_,i_fft_,f_fft_,max_amp_,health_);
 
-  // find max index and set the fit window
-  // Must rule out the constant component psd_[0]
-  max_idx_fft_ = std::distance(psd_.begin(),
-    std::max_element(psd_.begin()+1, psd_.end()));
-
-  double interval = fftfreq_[1] - fftfreq_[0];
-  unsigned int fft_peak_index_width = static_cast<int>(fft_peak_width_/interval);
-
-  if (max_idx_fft_ < fft_peak_index_width) i_fft_ = 1;  
-  else i_fft_ = max_idx_fft_ - fft_peak_index_width ;
-
-  f_fft_ = max_idx_fft_ + fft_peak_index_width;
-  if (f_fft_ > psd_.size()) f_fft_ = psd_.size();
-  */
 }
 
 void Fid::CalcFftFreq()
 {
   // @todo: consider storing as start, step, stop
-  //fftfreq_ = dsp::fftfreq(tm_);
-  ;
+  fftfreq_ = dsp::fftfreq(tm_,NBatch);
 }
 
 void Fid::GuessFitParams()
@@ -685,26 +603,35 @@ void Fid::GuessFitParams()
   // exponent
   guess_[4] = 2.0;
 
+*/
   return;
 }
 
-
-void Fid::FreqFit(TF1& func)
+void Fid::FreqFit()
 {
-  // Make a TGraph to fit
-  gr_freq_series_ = TGraph(f_fft_ - i_fft_, &fftfreq_[i_fft_], &psd_[i_fft_]);
-
-  gr_freq_series_.Fit(&func, "QMRSEX0", "C", fftfreq_[i_fft_], fftfreq_[f_fft_]);
-  //gr_freq_series_.Fit(&func, "MRSEX0", "C", fftfreq_[i_fft_], fftfreq_[f_fft_]);
-
-  chi2_ = func.GetChisquare();
-  freq_err_array_[freq_method_] = f_fit_.GetParError(0) / dsp::kTau;
-
-  res_.resize(0);
-  for (unsigned int i = i_fft_; i < f_fft_ + 1; ++i){
-    res_.push_back(psd_[i] - func.Eval(fftfreq_[i]));
+  unsigned int m;
+  if (fid_size % 2 == 0) {
+    m = fid_size/2+1;
+  } else {
+    m = (fid_size+1)/2;
   }
-*/
+
+  for (unsigned int i=0;i<NBatch;i++){
+    // Make a TGraph to fit
+    gr_freq_series_[i] = TGraph(f_fft_[i] - i_fft_[i], &fftfreq_[i*m+i_fft_[i]], &psd_[i*m+i_fft_[i]]);
+
+    gr_freq_series_[i].Fit(&f_fit_[i], "QMRSEX0", "C", fftfreq_[i*m+i_fft_[i]], fftfreq_[i*m+i_fft_[i]]);
+    //gr_freq_series_.Fit(&func, "MRSEX0", "C", fftfreq_[i_fft_], fftfreq_[f_fft_]);
+
+    chi2_[i] = f_fit_[i].GetChisquare();
+    freq_err_array_[i][freq_method_] = f_fit_[i].GetParError(0) / dsp::kTau;
+
+    res_=std::vector<double>(m*NBatch);
+    for (unsigned int j = i_fft_[i]; j < f_fft_[i]; ++j){
+      res_[i*m+j] = psd_[i*m+j] - f_fit_[i].Eval(fftfreq_[i*m+j]);
+    }
+  }
+
   return;
 }
 

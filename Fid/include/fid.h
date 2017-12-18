@@ -121,9 +121,9 @@ class Fid {
   void CalcPhaseDerivFreq();
   void CalcSinusoidFreq();
 
-  void CalcNoise();
+  void CalcEdgeNoise();
   void CalcMaxAmp();      
-  double CalcRms();      
+  void CalcRms(double start,double end);      
   void CenterFid();
   void FindFidRange();
   void CallFFT();
@@ -132,7 +132,7 @@ class Fid {
   void ConstBaselineCorrection(double ConstBaseline);
   void CalcFftFreq();
   void GuessFitParams();
-  void FreqFit(TF1& func);
+  void FreqFit();
  protected:
   
   unsigned int NBatch;	//number of batches, or number of fids
@@ -147,6 +147,7 @@ class Fid {
 
   // Waveform characteristics
   std::vector<double> mean_;
+  std::vector<double> rms_;
   std::vector<double> noise_;
   std::vector<double> snr_;
   std::vector<double> max_amp_;
@@ -200,7 +201,7 @@ class Fid {
 //  std::vector<double> temp_; // for random transformations
 
   //Integrated Processor Class
-//  dsp::Processor theProcessor;
+  dsp::Processor theProcessor;
   dsp::IntegratedProcessor theIntegratedProcessor;
 
   // Private Member Functions  
