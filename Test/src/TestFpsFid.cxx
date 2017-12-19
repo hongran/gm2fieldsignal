@@ -38,7 +38,7 @@ int main(int argc,char ** argv){
   myFid.SetParameter("edge_width",2e-5);
   myFid.SetParameter("edge_ignore",6e-5);
   myFid.SetParameter("hyst_thresh",0.7);
-  myFid.SetPoln(2);
+//  myFid.SetPoln(2);
 
 //  for (unsigned int k=0;k<4;k++){
     std::cout << "Event "<<EventID<<std::endl;
