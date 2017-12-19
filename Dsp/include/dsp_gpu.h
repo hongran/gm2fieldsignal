@@ -241,8 +241,8 @@ double Chi2(std::vector<double>& a);
 //FFT
 class Processor{
   public:
-    Processor(unsigned int N=4096,unsigned int NBatch=1):
-      FFTSize(N),batch(NBatch)
+    Processor(unsigned int NBatch=1,unsigned int N=4096):
+      batch(NBatch),FFTSize(N)
   {
     cufftPlan1d(&planZ2Z, FFTSize, CUFFT_Z2Z, batch);
     cufftPlan1d(&planD2Z, FFTSize, CUFFT_D2Z, batch);
@@ -272,14 +272,14 @@ class Processor{
 	std::vector<unsigned int>& max_idx_fft,std::vector<unsigned int>& i_fft,std::vector<unsigned int>& f_fft, 
 	std::vector<double>& max_amp,std::vector<unsigned short>& health);
   private:
-    unsigned int FFTSize;
     unsigned int batch;
+    unsigned int FFTSize;
     cufftHandle planZ2Z;
     cufftHandle planD2Z;
     cufftHandle planZ2D;
 };
 
-std::vector<double> fftfreq(const std::vector<double>& tm,unsigned int NBatch=1);
+std::vector<double> fftfreq(const std::vector<double>& tm,unsigned int N,unsigned int NBatch=1);
 std::vector<double> fftfreq(const int N, const double dt,unsigned int NBatch=1);
 std::vector<double> normalized_gradient(int npoints, int poln=1); 
 

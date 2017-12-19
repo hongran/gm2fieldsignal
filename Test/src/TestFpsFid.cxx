@@ -40,7 +40,7 @@ int main(int argc,char ** argv){
   myFid.SetParameter("hyst_thresh",0.7);
 //  myFid.SetPoln(2);
 
-//  for (unsigned int k=0;k<4;k++){
+  for (unsigned int k=0;k<4;k++){
     std::cout << "Event "<<EventID<<std::endl;
     V.clear();
     T.clear();
@@ -83,13 +83,14 @@ int main(int argc,char ** argv){
     }*/
     auto t0 = std::chrono::high_resolution_clock::now();
     myFid.SetWf(V,T[1]-T[0],NBatch,fid_size);
-    myFid.Init("Standard");
+    //myFid.Init("Standard");
+    myFid.Init("Single");
     auto t1 = std::chrono::high_resolution_clock::now();
     auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
     double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
     std::cout << "Time = "<<t<<std::endl;
-//    EventID++;
-//  }
+    EventID++;
+  }
   filein->Close();
   delete filein;
 

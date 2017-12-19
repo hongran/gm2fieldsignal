@@ -124,7 +124,7 @@ void Fid::SetBaseline(const std::vector<double>& bl){
 void Fid::SetPoln(unsigned int N)
 { 
   poln = N;
-  theIntegratedProcessor.SetNFitPar(poln);
+  theIntegratedProcessor.SetNFitPar(poln+1);
 }
 
 void Fid::Init(std::string Option)
@@ -220,9 +220,15 @@ void Fid::Init(std::string Option)
     freq_method_ = PH;
     CalcFreq();*/
     ;
+  }else if (Option.compare("Single")==0){
+  std::cout <<"AAAAAAAAAAAAAAAAAAAAA"<<std::endl;
+    CallFFT();
+    CalcPowerEnvAndPhase();
   }else if (Option.compare("FFTOnly")==0){
     CallFFT();
     CalcPowerEnvAndPhase();
+    freq_method_ = PH;
+    CalcPhaseFreq();
   }
 
   //Calculate health
@@ -534,11 +540,17 @@ void Fid::CallFFT()
 {
   //Get Frequency vector
   CalcFftFreq();
+  unsigned int m = fid_size / 2 + 1;  // size of rfft
+  if (fid_size % 2 != 0) {
+    m = (fid_size+1)/2;
+  }
+
   // Get the fft of the waveform first.
   fid_fft_ = theProcessor.rfft(wf_,fid_size,NBatch);
 
   //Filtered fft spectrum
-  auto fid_fft_filtered_ = theProcessor.window_filter(fid_fft_,fftfreq_,filter_low_freq_,filter_high_freq_,fid_size,NBatch);
+  auto fid_fft_filtered_ = theProcessor.window_filter(fid_fft_,fftfreq_,filter_low_freq_,filter_high_freq_,m,NBatch);
+  std::cout <<"BBBBBBBBBBBBBBBBBBBBB"<<std::endl;
 
   // Apply square filter and reverse fft to get the filtered waveform
   filtered_wf_ = theProcessor.irfft(fid_fft_filtered_ ,fid_size,NBatch);
@@ -552,11 +564,10 @@ void Fid::CallFFT()
   wf_im_ = theProcessor.irfft(fid_fft_filtered_,fid_size,NBatch);
 
   // Get the baseline by applying low-pass filter
-  auto baseline_fft = theProcessor.window_filter(fid_fft_,fftfreq_,0,baseline_freq_thresh_,fid_size,NBatch);
+  auto baseline_fft = theProcessor.window_filter(fid_fft_,fftfreq_,0,baseline_freq_thresh_,m,NBatch);
   //std::vector<dsp::cdouble> baseline_fft(fid_fft_.size());
   //baseline_fft[0] = fid_fft_[0]-fid_fft_[1];
   baseline_ = theProcessor.irfft(baseline_fft,fid_size,NBatch);
-
   FFTDone = true;
 }
 
@@ -575,7 +586,7 @@ void Fid::CalcPowerEnvAndPhase()
 void Fid::CalcFftFreq()
 {
   // @todo: consider storing as start, step, stop
-  fftfreq_ = dsp::fftfreq(tm_,NBatch);
+  fftfreq_ = dsp::fftfreq(tm_,fid_size,NBatch);
 }
 
 void Fid::GuessFitParams()

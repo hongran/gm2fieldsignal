@@ -466,7 +466,7 @@ std::vector<cdouble> Processor::ifft(const std::vector<cdouble>& v,unsigned int 
   thrust::device_vector<thrust::complex<double>> d_output_z(N*NBatch);
 
   if ( FFTSize != N || batch != NBatch){
-    ResetPlan(N,batch);
+    ResetPlan(N,NBatch);
   }
 
   //CUDA FFT
@@ -495,18 +495,21 @@ std::vector<cdouble> Processor::rfft(const std::vector<double> &v,unsigned int N
   // Grab some useful constants.
   assert(v.size() == N*NBatch);
   unsigned int n = N / 2 + 1;  // size of rfft
+  if (N % 2 != 0) {
+    n = (N+1)/2;
+  }
   double Nroot = std::sqrt(N);
 
   thrust::device_vector<double> d_input_d(N*NBatch);
   thrust::device_vector<thrust::complex<double>> d_output_z(n*NBatch);
 
   if ( FFTSize != N || batch != NBatch){
-    ResetPlan(N,batch);
+    ResetPlan(N,NBatch);
   }
 
   //CUDA FFT
   // Instantiate the result vector.
-  std::vector<cdouble> fft_vec(n, cdouble(0.0, 0.0));
+  std::vector<cdouble> fft_vec(n*NBatch, cdouble(0.0, 0.0));
   cufftDoubleReal *d_data = (cufftDoubleReal*)thrust::raw_pointer_cast(d_input_d.data());
   cufftDoubleComplex *d_data_res = (cuDoubleComplex*)thrust::raw_pointer_cast(d_output_z.data());
   const cufftDoubleReal *h_data = reinterpret_cast<const cufftDoubleReal *>(&v[0]);
@@ -538,6 +541,9 @@ std::vector<double> Processor::irfft(const std::vector<cdouble>& fft, unsigned i
 {
   // Grab some useful constants.
   unsigned int n = N / 2 + 1;  // size of rfft
+  if (N % 2 != 0) {
+    n = (N+1)/2;
+  }
   assert(fft.size() == n*NBatch);
   double Nroot = std::sqrt(N);
 
@@ -545,7 +551,7 @@ std::vector<double> Processor::irfft(const std::vector<cdouble>& fft, unsigned i
   thrust::device_vector<double> d_output_d(N*NBatch);
 
   if ( FFTSize != N || batch != NBatch){
-    ResetPlan(N,batch);
+    ResetPlan(N,NBatch);
   }
 
   //CUDA FFT
@@ -605,7 +611,7 @@ std::vector<cdouble> Processor::window_filter(const std::vector<cdouble>& spectr
   unsigned int i_start = std::floor((low-freq[0])/interval);
   unsigned int i_end = std::floor((high-freq[0])/interval);
   //result vector 
-  thrust::device_vector<thrust::complex<double>> d_spectrum;
+  thrust::device_vector<thrust::complex<double>> d_spectrum(N*NBatch);
 
   cdouble * h_data = reinterpret_cast<cdouble *>(&output[0]);
   cdouble * d_data = (cdouble *)thrust::raw_pointer_cast(d_spectrum.data());
@@ -804,9 +810,9 @@ void Processor::FindFitRange(unsigned int Length, unsigned int NBatch,double sta
 }
 
 // Helper function to get frequencies for FFT
-std::vector<double> fftfreq(const std::vector<double>& tm, unsigned int NBatch) 
+std::vector<double> fftfreq(const std::vector<double>& tm,unsigned int N, unsigned int NBatch) 
 {
-  int N = tm.size();
+//  int N = tm.size();
   double dt = (tm[N-1] - tm[0]) / (N - 1); // sampling rate
 
   return fftfreq(N, dt,NBatch);
@@ -822,7 +828,7 @@ std::vector<double> fftfreq(const int N, const double dt, unsigned int NBatch)
   // Handle both even and odd cases properly.
   if (N % 2 == 0) {
     m = N/2+1;
-    freq.resize(m);
+    freq.resize(m*NBatch);
     for(unsigned int j=0; j<NBatch; j++){ 
       for (unsigned int i = 0; i < m; i++) {
 	freq[i+j*m] = i / (dt * N);
@@ -830,7 +836,7 @@ std::vector<double> fftfreq(const int N, const double dt, unsigned int NBatch)
     }
   } else {
     m = (N+1)/2;
-    freq.resize(m);
+    freq.resize(m*NBatch);
     for(unsigned int j=0; j<NBatch; j++){ 
       for (unsigned int i = 0; i < m; i++) {
 	freq[i+j*m] = i / (dt * N);
