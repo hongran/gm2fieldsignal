@@ -40,7 +40,7 @@ int main(int argc,char ** argv){
   myFid.SetParameter("hyst_thresh",0.7);
   myFid.SetPoln(1);
 
-  for (unsigned int k=0;k<4;k++){
+//  for (unsigned int k=0;k<4;k++){
     std::cout << "Event "<<EventID<<std::endl;
     V.clear();
     T.clear();
@@ -88,8 +88,8 @@ int main(int argc,char ** argv){
     auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
     double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();
     std::cout << "Time = "<<t<<std::endl;
-    EventID++;
-  }
+//    EventID++;
+//  }
   filein->Close();
   delete filein;
 
@@ -180,7 +180,14 @@ int main(int argc,char ** argv){
   }
 */
 
+  unsigned int m;
+  if (fid_size % 2 == 0) {
+    m = fid_size/2+1;
+  } else {
+    m = (fid_size+1)/2;
+  }
   TGraph * gPhiFit[400];
+  TGraph * gPsdFit[400];
   TGraph * gWfView[400];
   TF1 FitFunc[400];
   for (unsigned int j=0;j<NBatch;j++){
@@ -188,6 +195,11 @@ int main(int argc,char ** argv){
     gPhiFit[j]->SetName(Form("PhiFit%d",j));
     for (unsigned int i=0;i<fid_size;i++){
       gPhiFit[j]->SetPoint(i,tm[j*fid_size+i],Phi[j*fid_size+i]);
+    }
+    gPsdFit[j] = new TGraph();
+    gPsdFit[j]->SetName(Form("PsdFit%d",j));
+    for (unsigned int i=0;i<m;i++){
+      gPsdFit[j]->SetPoint(i,freq[j*m+i],Psd[j*m+i]);
     }
     gWfView[j] = new TGraph();
     gWfView[j]->SetName(Form("Wf%d",j));
@@ -201,17 +213,18 @@ int main(int argc,char ** argv){
 
   TFile * FileOut = new TFile("TestOut.root","recreate");
 //  gWf->Write();
-  gPsd->Write();
+ /* gPsd->Write();
   gBaseline->Write();
   gWf_corrected->Write();
   gWf_filter->Write();
   gWf_im->Write();
   gPhi->Write();
   gEnv->Write();
-  gEnvN->Write();
+  gEnvN->Write();*/
  // gRes->Write();
   for (unsigned int j=0;j<NBatch;j++){
     gPhiFit[j]->Write();
+    gPsdFit[j]->Write();
     gWfView[j]->Write();
     FitFunc[j].Write();
   }
@@ -220,6 +233,8 @@ int main(int argc,char ** argv){
 
   for (unsigned int j=0;j<NBatch;j++){
     delete gPhiFit[j];
+    delete gPsdFit[j];
+    delete gWfView[j];
   }
   return 0;
 }
