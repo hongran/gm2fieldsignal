@@ -370,7 +370,7 @@ std::vector<double>& VecShift(double c, std::vector<double>& a)
   return a;
 }
 
-double Chi2(std::vector<double>& a){
+double VecChi2(std::vector<double>& a){
 
   unsigned int N = a.size();
   thrust::device_vector<double> d_input1(N);
@@ -462,8 +462,8 @@ std::vector<cdouble> Processor::ifft(const std::vector<cdouble>& v,unsigned int 
   assert(v.size() == N*NBatch);
   double Nroot = std::sqrt(N);
 
-  thrust::device_vector<thrust::complex<double>> d_input_z(N*NBatch);
-  thrust::device_vector<thrust::complex<double>> d_output_z(N*NBatch);
+//  thrust::device_vector<thrust::complex<double>> d_input_z(N*NBatch);
+//  thrust::device_vector<thrust::complex<double>> d_output_z(N*NBatch);
 
   if ( FFTSize != N || batch != NBatch){
     ResetPlan(N,NBatch);
@@ -475,11 +475,11 @@ std::vector<cdouble> Processor::ifft(const std::vector<cdouble>& v,unsigned int 
   const cufftDoubleComplex *h_data = reinterpret_cast<const cufftDoubleComplex *>(&v[0]);
   cufftDoubleComplex *h_data_res =  reinterpret_cast<cufftDoubleComplex *>(&wfm_vec[0]);
 
-  cufftDoubleComplex *d_data = (cuDoubleComplex*)thrust::raw_pointer_cast(d_input_z.data());
+//  cufftDoubleComplex *d_data = (cuDoubleComplex*)thrust::raw_pointer_cast(d_input_z.data());
 
-  cudaMemcpy(d_data, h_data, sizeof(cufftDoubleComplex) * N*NBatch, cudaMemcpyHostToDevice);
-  cufftExecZ2Z(planZ2Z, d_data, d_data, CUFFT_INVERSE);
-  cudaMemcpy(h_data_res, d_data, sizeof(cufftDoubleComplex) * N*NBatch, cudaMemcpyDeviceToHost);
+  cudaMemcpy(d_input_z, h_data, sizeof(cufftDoubleComplex) * N*NBatch, cudaMemcpyHostToDevice);
+  cufftExecZ2Z(planZ2Z, d_input_z, d_output_z, CUFFT_INVERSE);
+  cudaMemcpy(h_data_res, d_output_z, sizeof(cufftDoubleComplex) * N*NBatch, cudaMemcpyDeviceToHost);
 
   // cudafft is unnormalized, so we need to fix that.
   for (auto it = wfm_vec.begin(); it != wfm_vec.end(); ++it) {
@@ -500,8 +500,8 @@ std::vector<cdouble> Processor::rfft(const std::vector<double> &v,unsigned int N
   }
   double Nroot = std::sqrt(N);
 
-  thrust::device_vector<double> d_input_d(N*NBatch);
-  thrust::device_vector<thrust::complex<double>> d_output_z(n*NBatch);
+ // thrust::device_vector<double> d_input_d(N*NBatch);
+//  thrust::device_vector<thrust::complex<double>> d_output_z(n*NBatch);
 
   if ( FFTSize != N || batch != NBatch){
     ResetPlan(N,NBatch);
@@ -510,19 +510,19 @@ std::vector<cdouble> Processor::rfft(const std::vector<double> &v,unsigned int N
   //CUDA FFT
   // Instantiate the result vector.
   std::vector<cdouble> fft_vec(n*NBatch, cdouble(0.0, 0.0));
-  cufftDoubleReal *d_data = (cufftDoubleReal*)thrust::raw_pointer_cast(d_input_d.data());
-  cufftDoubleComplex *d_data_res = (cuDoubleComplex*)thrust::raw_pointer_cast(d_output_z.data());
+  //cufftDoubleReal *d_data = (cufftDoubleReal*)thrust::raw_pointer_cast(d_input_d.data());
+  //cufftDoubleComplex *d_data_res = (cuDoubleComplex*)thrust::raw_pointer_cast(d_output_z.data());
   const cufftDoubleReal *h_data = reinterpret_cast<const cufftDoubleReal *>(&v[0]);
   cufftDoubleComplex *h_data_res =  reinterpret_cast<cufftDoubleComplex *>(&fft_vec[0]);
 
-  cudaMemcpy(d_data, h_data, sizeof(cufftDoubleReal) * N*NBatch, cudaMemcpyHostToDevice);
-  cufftExecD2Z(planD2Z, d_data, d_data_res);
+  cudaMemcpy(d_input_d, h_data, sizeof(cufftDoubleReal) * N*NBatch, cudaMemcpyHostToDevice);
+  cufftExecD2Z(planD2Z, d_input_d, d_output_z);
   //renormalize
   dim3 DimBlock (16);
   dim3 DimGrid (n*NBatch/16+1);
-  ComplexScale<<<DimGrid, DimBlock>>>(1/Nroot,d_data_res,n*NBatch);
+  ComplexScale<<<DimGrid, DimBlock>>>(1/Nroot,d_output_z,n*NBatch);
 
-  cudaMemcpy(h_data_res, d_data_res, sizeof(cufftDoubleComplex) * n*NBatch, cudaMemcpyDeviceToHost);
+  cudaMemcpy(h_data_res, d_output_z, sizeof(cufftDoubleComplex) * n*NBatch, cudaMemcpyDeviceToHost);
 
   /*for (auto it = fft_vec.begin(); it != fft_vec.end(); ++it) {
     *it /= Nroot;
@@ -547,8 +547,8 @@ std::vector<double> Processor::irfft(const std::vector<cdouble>& fft, unsigned i
   assert(fft.size() == n*NBatch);
   double Nroot = std::sqrt(N);
 
-  thrust::device_vector<thrust::complex<double>> d_input_z(n*NBatch);
-  thrust::device_vector<double> d_output_d(N*NBatch);
+  //thrust::device_vector<thrust::complex<double>> d_input_z(n*NBatch);
+  //thrust::device_vector<double> d_output_d(N*NBatch);
 
   if ( FFTSize != N || batch != NBatch){
     ResetPlan(N,NBatch);
@@ -557,14 +557,14 @@ std::vector<double> Processor::irfft(const std::vector<cdouble>& fft, unsigned i
   //CUDA FFT
   // Instantiate the result vector.
   std::vector<double> wfm_vec(N*NBatch, 0.0);
-  cufftDoubleComplex *d_data = (cuDoubleComplex*)thrust::raw_pointer_cast(d_input_z.data());
-  cufftDoubleReal *d_data_res = (cufftDoubleReal*)thrust::raw_pointer_cast(d_output_d.data());
+  //cufftDoubleComplex *d_data = (cuDoubleComplex*)thrust::raw_pointer_cast(d_input_z.data());
+  //cufftDoubleReal *d_data_res = (cufftDoubleReal*)thrust::raw_pointer_cast(d_output_d.data());
   const cufftDoubleComplex *h_data = reinterpret_cast<const cufftDoubleComplex *>(&fft[0]);
   cufftDoubleReal *h_data_res =  reinterpret_cast<cufftDoubleReal *>(&wfm_vec[0]);
 
-  cudaMemcpy(d_data, h_data, sizeof(cufftDoubleComplex) * n*NBatch, cudaMemcpyHostToDevice);
-  cufftExecZ2D(planZ2D, d_data, d_data_res);
-  cudaMemcpy(h_data_res, d_data_res, sizeof(cufftDoubleReal) * N*NBatch, cudaMemcpyDeviceToHost);
+  cudaMemcpy(d_input_z, h_data, sizeof(cufftDoubleComplex) * n*NBatch, cudaMemcpyHostToDevice);
+  cufftExecZ2D(planZ2D, d_input_z, d_output_d);
+  cudaMemcpy(h_data_res, d_output_d, sizeof(cufftDoubleReal) * N*NBatch, cudaMemcpyDeviceToHost);
 
   // cufft is unnormalized, so we need to fix that.
 /*  for (auto it = wfm_vec.begin(); it != wfm_vec.end(); ++it) {
@@ -584,7 +584,7 @@ std::vector<double> Processor::hilbert(const std::vector<double>& v ,unsigned in
   fft_vec[0] = cdouble(0.0, 0.0);
 
   // Multiply in the -i.
-  for (auto it = fft_vec.begin() + 1; it != fft_vec.end(); ++it) {
+  for (auto it = fft_vec.begin(); it != fft_vec.end(); ++it) {
     *it = cdouble((*it).imag(), -(*it).real());
   }
 
@@ -650,22 +650,40 @@ std::vector<double> Processor::phase(const std::vector<double>& wf_re, const std
   // Calculate the modulo-ed phase
   thrust::transform(d_wf_im.begin(), d_wf_im.end(), d_wf_re.begin(), d_phase.begin(),ATan2());
 
-  thrust::copy(d_phase.begin(),d_phase.end(),phase.begin());
-
   // Now unwrap the phase
   //Get the winding numbers
 
-  thrust::device_vector<double> d_phase_jumps(NBatch*N);
-  double *D_phase = (double *)thrust::raw_pointer_cast(d_phase.data());
-  double *D_phase_jumps = (double *)thrust::raw_pointer_cast(d_phase_jumps.data());
-  dim3 DimBlock2 (16);
-  dim3 DimGrid2 (NBatch/16+1);
-  FindUnwindingNumber<<<DimGrid2, DimBlock2>>>(D_phase,D_phase_jumps,N,NBatch,kMaxPhaseJump);
+  if (NBatch>NGPUThreshold){
+    thrust::device_vector<double> d_phase_jumps(NBatch*N);
+    double *D_phase = (double *)thrust::raw_pointer_cast(d_phase.data());
+    double *D_phase_jumps = (double *)thrust::raw_pointer_cast(d_phase_jumps.data());
+    dim3 DimBlock2 (16);
+    dim3 DimGrid2 (NBatch/16+1);
+    FindUnwindingNumber<<<DimGrid2, DimBlock2>>>(D_phase,D_phase_jumps,N,NBatch,kMaxPhaseJump);
 
-  //Add the winding phases
-  thrust::transform(d_phase.begin(), d_phase.end(), d_phase_jumps.begin(), d_phase.begin(),ScaleAdd(kTau));
-  //Copy the unwinded phase back to host
-  thrust::copy(d_phase.begin(),d_phase.end(),phase.begin());
+    //Add the winding phases
+    thrust::transform(d_phase.begin(), d_phase.end(), d_phase_jumps.begin(), d_phase.begin(),ScaleAdd(kTau));
+    //Copy the unwinded phase back to host
+    thrust::copy(d_phase.begin(),d_phase.end(),phase.begin());
+  }else{
+    thrust::copy(d_phase.begin(),d_phase.end(),phase.begin());
+
+    for (unsigned int i=0;i<NBatch;i++){
+      int k=0;
+      double previous = phase[i*N];
+      for (unsigned int j = i*N + 1; j < (i+1)*N; j++) {
+	double u = phase[j] - previous;
+	previous = phase[j];
+	if (-u > kMaxPhaseJump){
+	  k++;
+	}
+	if (u > kMaxPhaseJump){
+	  k--;
+	}
+	phase[j]+=k*kTau;
+      }
+    }
+  }
   
   
   // Now unwrap the phase
@@ -738,7 +756,6 @@ std::vector<double> Processor::envelope(const std::vector<double>& wf_re, const 
   return env;
 }
 
-//****************************************************************************8
 void Processor::FindFitRange(unsigned int Length, unsigned int NBatch,double start_amplitude, double fft_peak_width,
     std::vector<double>& psd,std::vector<double>&env,double interval,
     std::vector<unsigned int>& iwf, std::vector<unsigned int>& fwf,
@@ -758,16 +775,34 @@ void Processor::FindFitRange(unsigned int Length, unsigned int NBatch,double sta
   thrust::copy(env.begin(),env.end(),d_env.begin());
   thrust::copy(psd.begin(),psd.end(),d_psd.begin());
 
-  double *D_env = (double *)thrust::raw_pointer_cast(d_env.data());
-  double *D_MaxAmp = (double *)thrust::raw_pointer_cast(d_MaxAmp.data());
-  unsigned int *D_iwf = (unsigned int *)thrust::raw_pointer_cast(d_iwf.data());
-  unsigned int *D_fwf = (unsigned int *)thrust::raw_pointer_cast(d_fwf.data());
-  dim3 DimBlock2 (16);
-  dim3 DimGrid2 (NBatch/16+1);
-  BatchFindRange<<<DimGrid2, DimBlock2>>>(D_env,D_MaxAmp,D_iwf,D_fwf,Length,NBatch,start_amplitude);
-  thrust::copy(d_MaxAmp.begin(),d_MaxAmp.end(),max_amp.begin());
-  thrust::copy(d_iwf.begin(),d_iwf.end(),iwf.begin());
-  thrust::copy(d_fwf.begin(),d_fwf.end(),fwf.begin());
+  if (NBatch>NGPUThreshold){
+    double *D_env = (double *)thrust::raw_pointer_cast(d_env.data());
+    double *D_MaxAmp = (double *)thrust::raw_pointer_cast(d_MaxAmp.data());
+    unsigned int *D_iwf = (unsigned int *)thrust::raw_pointer_cast(d_iwf.data());
+    unsigned int *D_fwf = (unsigned int *)thrust::raw_pointer_cast(d_fwf.data());
+    dim3 DimBlock2 (16);
+    dim3 DimGrid2 (NBatch/16+1);
+    BatchFindRange<<<DimGrid2, DimBlock2>>>(D_env,D_MaxAmp,D_iwf,D_fwf,Length,NBatch,start_amplitude);
+    thrust::copy(d_MaxAmp.begin(),d_MaxAmp.end(),max_amp.begin());
+    thrust::copy(d_iwf.begin(),d_iwf.end(),iwf.begin());
+    thrust::copy(d_fwf.begin(),d_fwf.end(),fwf.begin());
+  }else{
+    for (unsigned int i = 0; i<NBatch ; i++){
+      auto it = std::max_element(env.begin()+i*Length,env.begin()+(i+1)*Length);
+      double max = *it;
+      max_amp[i] = max;
+      unsigned int k = std::distance(env.begin()+i*Length,it);
+      iwf[i] = k;
+      fwf[i] = k;
+      while (k<Length){
+	if (env[i*Length+k]<max*start_amplitude){
+	  fwf[i] = k;
+	  break;
+	}
+	k++;
+      }
+    }
+  }
 
   for(unsigned int i=0; i<NBatch; i++)
   {
@@ -794,18 +829,32 @@ void Processor::FindFitRange(unsigned int Length, unsigned int NBatch,double sta
     m = (Length+1)/2;
   }
 
-  thrust::device_vector<unsigned int> d_max_idx_fft(NBatch);
-  thrust::device_vector<unsigned int> d_i_fft(NBatch);
-  thrust::device_vector<unsigned int> d_f_fft(NBatch);
+  if (NBatch>NGPUThreshold){
+    thrust::device_vector<unsigned int> d_max_idx_fft(NBatch);
+    thrust::device_vector<unsigned int> d_i_fft(NBatch);
+    thrust::device_vector<unsigned int> d_f_fft(NBatch);
 
-  double *D_psd = (double *)thrust::raw_pointer_cast(d_psd.data());
-  unsigned int *D_max_idx_fft = (unsigned int *)thrust::raw_pointer_cast(d_max_idx_fft.data());
-  unsigned int *D_i_fft = (unsigned int *)thrust::raw_pointer_cast(d_i_fft.data());
-  unsigned int *D_f_fft = (unsigned int *)thrust::raw_pointer_cast(d_f_fft.data());
-  BatchFindFFTRange<<<DimGrid2, DimBlock2>>>(D_psd,D_max_idx_fft,D_i_fft,D_f_fft,m,NBatch,fft_peak_index_width);
-  thrust::copy(d_max_idx_fft.begin(),d_max_idx_fft.end(),max_idx_fft.begin());
-  thrust::copy(d_i_fft.begin(),d_i_fft.end(),i_fft.begin());
-  thrust::copy(d_f_fft.begin(),d_f_fft.end(),f_fft.begin());
+    double *D_psd = (double *)thrust::raw_pointer_cast(d_psd.data());
+    unsigned int *D_max_idx_fft = (unsigned int *)thrust::raw_pointer_cast(d_max_idx_fft.data());
+    unsigned int *D_i_fft = (unsigned int *)thrust::raw_pointer_cast(d_i_fft.data());
+    unsigned int *D_f_fft = (unsigned int *)thrust::raw_pointer_cast(d_f_fft.data());
+    dim3 DimBlock2 (16);
+    dim3 DimGrid2 (NBatch/16+1);
+    BatchFindFFTRange<<<DimGrid2, DimBlock2>>>(D_psd,D_max_idx_fft,D_i_fft,D_f_fft,m,NBatch,fft_peak_index_width);
+    thrust::copy(d_max_idx_fft.begin(),d_max_idx_fft.end(),max_idx_fft.begin());
+    thrust::copy(d_i_fft.begin(),d_i_fft.end(),i_fft.begin());
+    thrust::copy(d_f_fft.begin(),d_f_fft.end(),f_fft.begin());
+  }else{
+    for (unsigned int i = 0; i<NBatch ; i++){
+      auto it = std::max_element(psd.begin()+i*m,psd.begin()+(i+1)*m);
+      unsigned int k = std::distance(psd.begin()+i*m,it);
+      max_idx_fft[i] = k;
+      if(k<=fft_peak_index_width) i_fft[i]=1;
+      else i_fft[i]=k-fft_peak_index_width;
+      f_fft[i]=k+fft_peak_index_width;
+      if(f_fft[i]>m) f_fft[i]=m;
+    }
+  }
 
 }
 
@@ -1290,7 +1339,6 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   // Calculate the modulo-ed phase
   thrust::transform(d_wf_im.begin(), d_wf_im.end(), d_filtered_wf.begin(),d_phase.begin(),ATan2());
   phi.resize(Length*NBatch);
-  thrust::copy(d_phase.begin(),d_phase.end(),phi.begin());
 
   auto t1 = std::chrono::high_resolution_clock::now();
   auto dtn1 = t1.time_since_epoch() - t0.time_since_epoch();
@@ -1300,17 +1348,36 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   // Now unwrap the phase
   //Get the winding numbers
 
-  thrust::device_vector<double> d_phase_jumps(NBatch*Length);
-  double *D_phase = (double *)thrust::raw_pointer_cast(d_phase.data());
-  double *D_phase_jumps = (double *)thrust::raw_pointer_cast(d_phase_jumps.data());
-  dim3 DimBlock2 (16);
-  dim3 DimGrid2 (NBatch/16+1);
-  FindUnwindingNumber<<<DimGrid2, DimBlock2>>>(D_phase,D_phase_jumps,Length,NBatch,kMaxPhaseJump);
+  if (NBatch>NGPUThreshold){
+    thrust::device_vector<double> d_phase_jumps(NBatch*Length);
+    double *D_phase = (double *)thrust::raw_pointer_cast(d_phase.data());
+    double *D_phase_jumps = (double *)thrust::raw_pointer_cast(d_phase_jumps.data());
+    dim3 DimBlock2 (16);
+    dim3 DimGrid2 (NBatch/16+1);
+    FindUnwindingNumber<<<DimGrid2, DimBlock2>>>(D_phase,D_phase_jumps,Length,NBatch,kMaxPhaseJump);
 
-  //Add the winding phases
-  thrust::transform(d_phase.begin(), d_phase.end(), d_phase_jumps.begin(), d_phase.begin(),ScaleAdd(kTau));
-  //Copy the unwinded phase back to host
-  thrust::copy(d_phase.begin(),d_phase.end(),phi.begin());
+    //Add the winding phases
+    thrust::transform(d_phase.begin(), d_phase.end(), d_phase_jumps.begin(), d_phase.begin(),ScaleAdd(kTau));
+    //Copy the unwinded phase back to host
+    thrust::copy(d_phase.begin(),d_phase.end(),phi.begin());
+  }else{
+    thrust::copy(d_phase.begin(),d_phase.end(),phi.begin());
+    for (unsigned int i=0;i<NBatch;i++){
+      int k=0;
+      double previous = phi[i*Length];
+      for (unsigned int j = i*Length + 1; j < (i+1)*Length; j++) {
+	double u = phi[j] - previous;
+	previous = phi[j];
+	if (-u > kMaxPhaseJump){
+	  k++;
+	}
+	if (u > kMaxPhaseJump){
+	  k--;
+	}
+	phi[j]+=k*kTau;
+      }
+    }
+  }
   
   auto t2 = std::chrono::high_resolution_clock::now();
   auto dtn2 = t2.time_since_epoch() - t1.time_since_epoch();
@@ -1332,19 +1399,40 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   max_amp.resize(NBatch);
   iwf.resize(NBatch);
   fwf.resize(NBatch);
-  //initialize MaxAmp vector
-  thrust::device_vector<double> d_MaxAmp(NBatch);
-  thrust::device_vector<unsigned int> d_iwf(NBatch);
-  thrust::device_vector<unsigned int> d_fwf(NBatch);
 
-  double *D_env = (double *)thrust::raw_pointer_cast(d_env.data());
-  double *D_MaxAmp = (double *)thrust::raw_pointer_cast(d_MaxAmp.data());
-  unsigned int *D_iwf = (unsigned int *)thrust::raw_pointer_cast(d_iwf.data());
-  unsigned int *D_fwf = (unsigned int *)thrust::raw_pointer_cast(d_fwf.data());
-  BatchFindRange<<<DimGrid2, DimBlock2>>>(D_env,D_MaxAmp,D_iwf,D_fwf,Length,NBatch,start_amplitude);
-  thrust::copy(d_MaxAmp.begin(),d_MaxAmp.end(),max_amp.begin());
-  thrust::copy(d_iwf.begin(),d_iwf.end(),iwf.begin());
-  thrust::copy(d_fwf.begin(),d_fwf.end(),fwf.begin());
+  if (NBatch>NGPUThreshold){
+    //initialize MaxAmp vector
+    thrust::device_vector<double> d_MaxAmp(NBatch);
+    thrust::device_vector<unsigned int> d_iwf(NBatch);
+    thrust::device_vector<unsigned int> d_fwf(NBatch);
+
+    double *D_env = (double *)thrust::raw_pointer_cast(d_env.data());
+    double *D_MaxAmp = (double *)thrust::raw_pointer_cast(d_MaxAmp.data());
+    unsigned int *D_iwf = (unsigned int *)thrust::raw_pointer_cast(d_iwf.data());
+    unsigned int *D_fwf = (unsigned int *)thrust::raw_pointer_cast(d_fwf.data());
+    dim3 DimBlock2 (16);
+    dim3 DimGrid2 (NBatch/16+1);
+    BatchFindRange<<<DimGrid2, DimBlock2>>>(D_env,D_MaxAmp,D_iwf,D_fwf,Length,NBatch,start_amplitude);
+    thrust::copy(d_MaxAmp.begin(),d_MaxAmp.end(),max_amp.begin());
+    thrust::copy(d_iwf.begin(),d_iwf.end(),iwf.begin());
+    thrust::copy(d_fwf.begin(),d_fwf.end(),fwf.begin());
+  }else{
+    for (unsigned int i = 0; i<NBatch ; i++){
+      auto it = std::max_element(env.begin()+i*Length,env.begin()+(i+1)*Length);
+      double max = *it;
+      max_amp[i] = max;
+      unsigned int k = std::distance(env.begin()+i*Length,it);
+      iwf[i] = k;
+      fwf[i] = k;
+      while (k<Length){
+	if (env[i*Length+k]<max*start_amplitude){
+	  fwf[i] = k;
+	  break;
+	}
+	k++;
+      }
+    }
+  }
 
 /*
   for(unsigned int i=0; i<NBatch; i++)
@@ -1412,18 +1500,32 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   f_fft.resize(NBatch);
   unsigned int fft_peak_index_width = static_cast<int>(fft_peak_width/interval);
 
-  thrust::device_vector<unsigned int> d_max_idx_fft(NBatch);
-  thrust::device_vector<unsigned int> d_i_fft(NBatch);
-  thrust::device_vector<unsigned int> d_f_fft(NBatch);
+  if (NBatch>NGPUThreshold){
+    thrust::device_vector<unsigned int> d_max_idx_fft(NBatch);
+    thrust::device_vector<unsigned int> d_i_fft(NBatch);
+    thrust::device_vector<unsigned int> d_f_fft(NBatch);
 
-  double *D_psd = (double *)thrust::raw_pointer_cast(d_psd.data());
-  unsigned int *D_max_idx_fft = (unsigned int *)thrust::raw_pointer_cast(d_max_idx_fft.data());
-  unsigned int *D_i_fft = (unsigned int *)thrust::raw_pointer_cast(d_i_fft.data());
-  unsigned int *D_f_fft = (unsigned int *)thrust::raw_pointer_cast(d_f_fft.data());
-  BatchFindFFTRange<<<DimGrid2, DimBlock2>>>(D_psd,D_max_idx_fft,D_i_fft,D_f_fft,m,NBatch,fft_peak_index_width);
-  thrust::copy(d_max_idx_fft.begin(),d_max_idx_fft.end(),max_idx_fft.begin());
-  thrust::copy(d_i_fft.begin(),d_i_fft.end(),i_fft.begin());
-  thrust::copy(d_f_fft.begin(),d_f_fft.end(),f_fft.begin());
+    double *D_psd = (double *)thrust::raw_pointer_cast(d_psd.data());
+    unsigned int *D_max_idx_fft = (unsigned int *)thrust::raw_pointer_cast(d_max_idx_fft.data());
+    unsigned int *D_i_fft = (unsigned int *)thrust::raw_pointer_cast(d_i_fft.data());
+    unsigned int *D_f_fft = (unsigned int *)thrust::raw_pointer_cast(d_f_fft.data());
+    dim3 DimBlock2 (16);
+    dim3 DimGrid2 (NBatch/16+1);
+    BatchFindFFTRange<<<DimGrid2, DimBlock2>>>(D_psd,D_max_idx_fft,D_i_fft,D_f_fft,m,NBatch,fft_peak_index_width);
+    thrust::copy(d_max_idx_fft.begin(),d_max_idx_fft.end(),max_idx_fft.begin());
+    thrust::copy(d_i_fft.begin(),d_i_fft.end(),i_fft.begin());
+    thrust::copy(d_f_fft.begin(),d_f_fft.end(),f_fft.begin());
+  }else{
+    for (unsigned int i = 0; i<NBatch ; i++){
+      auto it = std::max_element(psd.begin()+i*m,psd.begin()+(i+1)*m);
+      unsigned int k = std::distance(psd.begin()+i*m,it);
+      max_idx_fft[i] = k;
+      if(k<=fft_peak_index_width) i_fft[i]=1;
+      else i_fft[i]=k-fft_peak_index_width;
+      f_fft[i]=k+fft_peak_index_width;
+      if(f_fft[i]>m) f_fft[i]=m;
+    }
+  }
 
   auto t3 = std::chrono::high_resolution_clock::now();
   auto dtn3 = t3.time_since_epoch() - t2.time_since_epoch();

@@ -220,15 +220,27 @@ void Fid::Init(std::string Option)
     freq_method_ = PH;
     CalcFreq();*/
     ;
-  }else if (Option.compare("Single")==0){
-  std::cout <<"AAAAAAAAAAAAAAAAAAAAA"<<std::endl;
+  }else if (Option.compare("SmallBatch")==0){
+    auto t0 = std::chrono::high_resolution_clock::now();
     CallFFT();
+    auto t1 = std::chrono::high_resolution_clock::now();
+    auto dtn1 = t1.time_since_epoch() - t0.time_since_epoch();
+    double dt1 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn1).count();
     CalcPowerEnvAndPhase();
+    auto t2 = std::chrono::high_resolution_clock::now();
+    auto dtn2 = t2.time_since_epoch() - t1.time_since_epoch();
+    double dt2 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn2).count();
+    freq_method_ = PH;
+    CalcPhaseFreq();
+    auto t3 = std::chrono::high_resolution_clock::now();
+    auto dtn3 = t3.time_since_epoch() - t2.time_since_epoch();
+    double dt3 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn3).count();
+    std::cout << "Time FFT = "<<dt1<<std::endl;
+    std::cout << "Phase = "<<dt2<<std::endl;
+    std::cout << "Time Fit = "<<dt3<<std::endl;
   }else if (Option.compare("FFTOnly")==0){
     CallFFT();
     CalcPowerEnvAndPhase();
-    freq_method_ = PH;
-    CalcPhaseFreq();
   }
 
   //Calculate health
@@ -550,7 +562,6 @@ void Fid::CallFFT()
 
   //Filtered fft spectrum
   auto fid_fft_filtered_ = theProcessor.window_filter(fid_fft_,fftfreq_,filter_low_freq_,filter_high_freq_,m,NBatch);
-  std::cout <<"BBBBBBBBBBBBBBBBBBBBB"<<std::endl;
 
   // Apply square filter and reverse fft to get the filtered waveform
   filtered_wf_ = theProcessor.irfft(fid_fft_filtered_ ,fid_size,NBatch);

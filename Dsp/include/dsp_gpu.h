@@ -46,6 +46,7 @@ typedef std::complex<double> cdouble;
 // constants
 const double kTau = 2 * M_PI;
 const double kMaxPhaseJump = 4.71;
+const unsigned int NGPUThreshold = 30;
 
 //--- linalg template functions ---------------------------------------------//
 
@@ -236,7 +237,7 @@ std::vector<double>& VecScale(double c, std::vector<double>& a);
 std::vector<double>& VecShift(double c, std::vector<double>& a);
 std::vector<double> norm(const std::vector<double>& v);
 std::vector<double> norm(const std::vector<cdouble>& v);
-double Chi2(std::vector<double>& a);
+double VecChi2(std::vector<double>& a);
 
 //FFT
 class Processor{
@@ -247,7 +248,19 @@ class Processor{
     cufftPlan1d(&planZ2Z, FFTSize, CUFFT_Z2Z, batch);
     cufftPlan1d(&planD2Z, FFTSize, CUFFT_D2Z, batch);
     cufftPlan1d(&planZ2D, FFTSize, CUFFT_Z2D, batch);
+    cudaMalloc((void **)&d_input_d, sizeof(cufftDoubleReal) * N*NBatch);
+    cudaMalloc((void **)&d_input_z, sizeof(cufftDoubleComplex) * N*NBatch);
+    cudaMalloc((void **)&d_output_d, sizeof(cufftDoubleReal) * N*NBatch);
+    cudaMalloc((void **)&d_output_z, sizeof(cufftDoubleComplex) * N*NBatch);
   }
+    ~Processor()
+    {
+      cudaFree(d_input_d);
+      cudaFree(d_input_z);
+      cudaFree(d_output_d);
+      cudaFree(d_output_z);
+    }
+
     void ResetPlan(unsigned int N,unsigned int NBatch)
     {
       FFTSize = N;
@@ -255,6 +268,14 @@ class Processor{
       cufftPlan1d(&planZ2Z, FFTSize, CUFFT_Z2Z, batch);
       cufftPlan1d(&planD2Z, FFTSize, CUFFT_D2Z, batch);
       cufftPlan1d(&planZ2D, FFTSize, CUFFT_Z2D, batch);
+      cudaFree(d_input_d);
+      cudaFree(d_input_z);
+      cudaFree(d_output_d);
+      cudaFree(d_output_z);
+      cudaMalloc((void **)&d_input_d, sizeof(cufftDoubleReal) * N*NBatch);
+      cudaMalloc((void **)&d_input_z, sizeof(cufftDoubleComplex) * N*NBatch);
+      cudaMalloc((void **)&d_output_d, sizeof(cufftDoubleReal) * N*NBatch);
+      cudaMalloc((void **)&d_output_z, sizeof(cufftDoubleComplex) * N*NBatch);
     }
 
     std::vector<cdouble> ifft(const std::vector<cdouble>& v,unsigned int N, unsigned int NBatch=1);
@@ -277,6 +298,10 @@ class Processor{
     cufftHandle planZ2Z;
     cufftHandle planD2Z;
     cufftHandle planZ2D;
+    cufftDoubleReal* d_input_d;
+    cufftDoubleComplex* d_input_z;
+    cufftDoubleReal* d_output_d;
+    cufftDoubleComplex* d_output_z;
 };
 
 std::vector<double> fftfreq(const std::vector<double>& tm,unsigned int N,unsigned int NBatch=1);

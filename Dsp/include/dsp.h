@@ -224,32 +224,47 @@ std::vector<double>& VecAdd(std::vector<double>& a, std::vector<double>& b);
 std::vector<double>& VecSubtract(std::vector<double>& a, std::vector<double>& b);
 std::vector<double>& VecScale(double c, std::vector<double>& a);
 std::vector<double>& VecShift(double c, std::vector<double>& a);
-double VecChi2(std::vector<double>& a);
-
-std::vector<double> normalized_gradient(int npoints, int poln=1); 
-
-std::vector<cdouble> ifft(const std::vector<cdouble>& v);
-std::vector<cdouble> rfft(const std::vector<double>& v);
-std::vector<double> irfft(const std::vector<cdouble>& v, bool is_odd);
-
-std::vector<double> hilbert(const std::vector<double>& v);
-std::vector<double> psd(const std::vector<double>& v);
-
 std::vector<double> norm(const std::vector<double>& v);
 std::vector<double> norm(const std::vector<cdouble>& v);
+double Chi2(std::vector<double>& a);
 
-std::vector<double> fftfreq(const std::vector<double>& tm);
-std::vector<double> fftfreq(const int N, const double dt);
 
-std::vector<cdouble> window_filter(const std::vector<cdouble>& spectrum, const std::vector<double>& time, double low, double high);
+//FFT
+class Processor{
+  public:
+    Processor(unsigned int NBatch=1,unsigned int N=4096):
+      batch(NBatch),FFTSize(N)
+  {
+  }
+    void ResetPlan(unsigned int N,unsigned int NBatch)
+    {
+      FFTSize = N;
+      batch = NBatch;
+    }
 
-std::vector<double> phase(const std::vector<double>& v);
-std::vector<double> phase(const std::vector<double>& wf_re, 
-                          const std::vector<double>& wf_im);
+    std::vector<cdouble> ifft(const std::vector<cdouble>& v,unsigned int N, unsigned int NBatch=1);
+    std::vector<cdouble> rfft(const std::vector<double>& v,unsigned int N, unsigned int NBatch=1);
+    std::vector<double> irfft(const std::vector<cdouble>& v,unsigned int N, unsigned int NBatch=1);
 
-std::vector<double> envelope(const std::vector<double>& v);
-std::vector<double> envelope(const std::vector<double>& wf_re, 
-                             const std::vector<double>& wf_im);	
+    std::vector<double> hilbert(const std::vector<double>& v,unsigned int N, unsigned int NBatch=1);
+    std::vector<cdouble> window_filter(const std::vector<cdouble>& spectrum, const std::vector<double>& time, double low, double high,unsigned int N, unsigned int NBatch=1);
+    std::vector<double> psd(const std::vector<cdouble>& v);
+    std::vector<double> phase(const std::vector<double>& wf_re,const std::vector<double>& wf_im,unsigned int N, unsigned int NBatch=1);
+    std::vector<double> envelope(const std::vector<double>& wf_re, const std::vector<double>& wf_im);	
+    void FindFitRange(unsigned int Length, unsigned int NBatch,double start_amplitude, double fft_peak_width,
+	std::vector<double>& psd,std::vector<double>&env,double interval,
+	std::vector<unsigned int>& iwf, std::vector<unsigned int>& fwf,
+	std::vector<unsigned int>& max_idx_fft,std::vector<unsigned int>& i_fft,std::vector<unsigned int>& f_fft, 
+	std::vector<double>& max_amp,std::vector<unsigned short>& health);
+  private:
+    unsigned int batch;
+    unsigned int FFTSize;
+};
+
+std::vector<double> fftfreq(const std::vector<double>& tm,unsigned int N,unsigned int NBatch=1);
+std::vector<double> fftfreq(const int N, const double dt,unsigned int NBatch=1);
+std::vector<double> normalized_gradient(int npoints, int poln=1); 
+
 /*
 arma::cx_mat wvd_cx(const std::vector<double>& v, bool upsample=false);
 arma::mat wvd(const std::vector<double>& v, bool upsample=false);
@@ -263,7 +278,41 @@ int convolve(const std::vector<double>& v,
              const std::vector<double>& filter, 
              std::vector<double>& res);
 
-int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const unsigned int i_idx, const unsigned int f_idx ,  const size_t NPar, std::vector<double>& ParList, std::vector<double>& Res);
+//Fitters
+int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const std::vector<unsigned int> i_idx, const std::vector<unsigned int> f_idx , const size_t NPar,const unsigned int NBatch, const unsigned int Length,std::vector<std::vector<double>>& ParLists, std::vector<double>& Res);
+
+class IntegratedProcessor{
+  public:
+    IntegratedProcessor(unsigned int BatchNum, unsigned int len);
+    int SetFilters(double low, double high, double baseline_thresh, double peak_width );
+    int SetEdges(double ignore, double width);
+    int SetAmpThreshold(double Thresh);
+//    void AnaSwith(bool sw);
+    void SetNFitPar(unsigned int N);
+    int Process(const std::vector<double>& wf,const std::vector<double>& tm, std::vector<double>& freq,
+	std::vector<double>& filtered_wf, std::vector<double>& wf_im, std::vector<double>& baseline,
+	std::vector<double>& psd, std::vector<double>& phi , std::vector<double>& env,
+	std::vector<unsigned int>& iwf, std::vector<unsigned int>& fwf,
+	std::vector<unsigned int> max_idx_fft,std::vector<unsigned int>& i_fft,std::vector<unsigned int>& f_fft, 
+	std::vector<double>& max_amp,std::vector<unsigned short>& health,
+	std::vector<std::vector<double>>& FreqResArray,std::vector<std::vector<double>>& FreqErrResArray,
+	std::vector<std::vector<double>>& FitPars,std::vector<double>& ResidualOut);
+
+  protected:
+    unsigned int Length;
+    unsigned int NBatch;
+    double WindowFilterLow = 20000.0;
+    double WindowFilterHigh = 80000.0;
+    double Baseline_Freq_Thresh = 500.0;
+    double fft_peak_width = 5000.0;
+    double edge_ignore = 6e-5;
+    double edge_width = 2e-5;
+    double start_amplitude = 0.37;
+//    bool FreqAnaSwitch = true;
+    unsigned int NFitPar = 3;
+    std::vector<std::vector<double>> FitParameters;
+    std::vector<double> Residual;
+};
 
 } // ::dsp
 
