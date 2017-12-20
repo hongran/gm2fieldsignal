@@ -263,14 +263,15 @@ int linearSolverCHOL(
 cusolverStatus_t status;
 
  // int bufferSize = 0;
+// info for LU
   int *info = NULL;
-  //double *buffer = NULL;
+ //info for solver
+  int *info2=NULL;
   double *A = NULL;
- // int *h_info = Null;
   cublasFillMode_t uplo = CUBLAS_FILL_MODE_LOWER;
- // h_info=(int *)malloc(NBatch); 
   //cusolverDnDpotrf_bufferSize(handle, uplo, n, (double*)total_matrix, lda, &bufferSize);
   cudaMalloc(&info, NBatch*sizeof(int));
+  cudaMalloc(&info2,1*sizeof(int));
   //cudaMalloc(&buffer, sizeof(double)*bufferSize);
   cudaMalloc(&A, sizeof(double)*lda*n*NBatch);
 
@@ -303,7 +304,19 @@ for(i=0;i<NBatch;i++)
  // cudaMemcpy(x, b, sizeof(double)*n, cudaMemcpyDeviceToDevice)
 
 double **par_pointer=(double **)thrust::raw_pointer_cast(&Par_pointer[0]);
-  cusolverDnDpotrsBatched(handle, uplo, n, 1, matrix_pointer, lda, par_pointer, lda,&info[0],NBatch);
+  cusolverDnDpotrsBatched(handle, uplo, n, 1, matrix_pointer, lda, par_pointer, lda,&info2,NBatch);
+//check info and set parameters to zero(info is zero if it succeeds)
+for(unsigned int i;i<NBatch;i++)
+{
+if(info[i]!=0)
+{
+for(unsigned int j; j<n;j++)
+{
+d_Parlists[i*n+j]=0;
+}
+}
+}
+
 //error matrix modification
 if(control)
 {
@@ -313,6 +326,18 @@ dim3 DimBlock (NBatch,16);
 dim3 DimGrid (1, 1);
 initBatchIdentity<<<DimGrid, DimBlock>>>(n,NBatch,d_error,err_pointer);
 cuvolverDnDpotrsBatched(handle,uplo,n,n,matrix_pointer,lda,err_pointer,lda,&info[0],NBatch);
+//check info and set error matrix to zero(We could merge this step with setting parameters to zero if we always output error matrix or further make it parallel)
+for(unsigned int i;i<NBatch;i++)
+{
+if(info[i]!=0)
+{
+for(unsigned int j; j<n*n;j++)
+{
+d_error[i*n*n+j]=0;
+}
+}
+}
+
 }
 else
 {
@@ -958,7 +983,7 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
   {
     cudaMemcpy(error_matrix,d_error_matrix,NBatch*NPar*NPar*sizeof(double),cudaMemcpyDeviceToHost);
   }
-  //Calculate Copy residual vector as a whole
+  //Calculate Copy residual vector as a whole(this function also has a batched version)
   const double alpha2 = 1.0;
   const double beta2  = -1.0;
   for(unsigned int i=0;i<NBatch;i++)
