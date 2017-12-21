@@ -27,7 +27,13 @@ notes:
 //--- project includes ------------------------------------------------------//
 //#include "params.h"
 //#include "dsp.h"
-#include "dsp_gpu.h"
+#if USEGPUFID == 1
+#define DSPINC "dsp_gpu.h"
+#else
+#define DSPINC "dsp_cpu.h"
+#endif
+
+#include DSPINC
 
 namespace fid {
 

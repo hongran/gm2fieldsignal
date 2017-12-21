@@ -46,6 +46,8 @@ FLAGS += -Wall -fPIC $(DEBUG) $(OPTIMIZE) -Iinclude -I$(GM2FIELDSIGNALLIB)/inclu
 ifeq ($(USEGPUFID),1)
 ifdef CUDA_HOME
 	LIBS += -L$(GM2FIELDSIGNALLIB)/lib -lm -lcudsp 
+	FLAGS += -I$(CUDA_HOME)/include  
+	FLAGS += -D"USEGPUFID=${USEGPUFID}"
 else
 	LIBS += -L$(GM2FIELDSIGNALLIB)/lib -lm -ldsp 
 endif
@@ -62,15 +64,14 @@ LIBS += -lboost_filesystem -lboost_system
 
 FLAGS += $(shell root-config --cflags)
 LIBS  += $(shell root-config --libs)
-GPU_FLAGS := -I$(CUDA_HOME)/include
 
 all: lib/$(LIBNAME)
 
 obj/%.o: src/%.cxx
-	$(CXX) $(FLAGS) $(GPU_FLAGS) -o $@ -c $<
+	$(CXX) $(FLAGS) -o $@ -c $<
 
 main: main.cxx
-	$(CXX) $(FLAGS) $(GPU_FLAGS) -o $@ -c $<
+	$(CXX) $(FLAGS) -o $@ -c $<
 
 lib/$(LIBNAME): $(OBJECTS)
 	$(CXX) -shared -fPIC $+ -o $@ $(LIBS)

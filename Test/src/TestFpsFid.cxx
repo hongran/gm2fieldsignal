@@ -83,8 +83,8 @@ int main(int argc,char ** argv){
     }*/
     auto t0 = std::chrono::high_resolution_clock::now();
     myFid.SetWf(V,T[1]-T[0],NBatch,fid_size);
-    //myFid.Init("Standard");
-    myFid.Init("SmallBatch");
+    myFid.Init("Standard");
+    //myFid.Init("SmallBatch");
     auto t1 = std::chrono::high_resolution_clock::now();
     auto dtn = t1.time_since_epoch() - t0.time_since_epoch();
     double t = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn).count();

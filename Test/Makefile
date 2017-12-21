@@ -38,7 +38,10 @@ endif
 LIBS += -lboost_filesystem -lboost_system
 
 FLAGS += -Wall $(DEBUG) $(OPTIMIZE) -I$(GM2FIELDSIGNALLIB)/include
-GPU_FLAGS := -I$(CUDA_HOME)/include
+ifdef CUDA_HOME
+	FLAGS += -I$(CUDA_HOME)/include
+endif
+FLAGS += -D"USEGPUFID=${USEGPUFID}"
 
 LIBS += -L$(GM2FIELDSIGNALLIB)/lib -lm -lfid
 
@@ -48,7 +51,7 @@ LIBS  += $(shell root-config --libs)
 all: $(EXE) 
 
 bin/%: src/%.cxx
-	$(CXX) $(FLAGS) $(GPU_FLAGS) $(LIBS) -o $@ $<
+	$(CXX) $(FLAGS) $(LIBS) -o $@ $<
 
 clean:
 	rm -f $(EXE)

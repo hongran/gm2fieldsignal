@@ -43,6 +43,7 @@ FLAGS += -Wall -fPIC $(DEBUG) $(OPTIMIZE) -Iinclude -I$(GM2FIELDSIGNALLIB)/inclu
 ifeq ($(USEGPUBARCODE),1)
 ifdef CUDA_HOME
 	LIBS += -L$(GM2FIELDSIGNALLIB)/lib -lm -lcudsp 
+	FLAGS += -I$(CUDA_HOME)/include
 else
 	LIBS += -L$(GM2FIELDSIGNALLIB)/lib -lm -ldsp 
 endif

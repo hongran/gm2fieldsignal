@@ -202,14 +202,14 @@ void Fid::Init(std::string Option)
 	max_amp_,health_,freq_array_,freq_err_array_,fit_parameters_,res_);
     FFTDone = true;
     //unsigned int NPar = fit_parameters_[0].size();
-    unsigned int NPar = poln;
+    unsigned int NPar = poln+1;
     for (unsigned int i=0 ; i<NBatch; i++){
       // Now set up the polynomial phase fit
       char fcn[20];
       char fcnName[20];
       sprintf(fcn, "pol%d", NPar-1);
       sprintf(fcnName, "f_fit_%03d", i);
-      f_fit_[i] = TF1(fcnName, fcn,tm_[i*fid_size+i_wf_[i]],tm_[i*fid_size+f_wf_[i]-1]);
+      f_fit_[i] = TF1(fcnName, fcn,tm_[i*fid_size+i_wf_[i]],tm_[i*fid_size+f_wf_[i]]);
       for (unsigned int j=0;j<NPar;j++){
 	f_fit_[i].SetParameter(j,fit_parameters_[i][j]);
       }
@@ -226,17 +226,17 @@ void Fid::Init(std::string Option)
     auto t1 = std::chrono::high_resolution_clock::now();
     auto dtn1 = t1.time_since_epoch() - t0.time_since_epoch();
     double dt1 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn1).count();
+    std::cout << "Time FFT = "<<dt1<<std::endl;
     CalcPowerEnvAndPhase();
     auto t2 = std::chrono::high_resolution_clock::now();
     auto dtn2 = t2.time_since_epoch() - t1.time_since_epoch();
     double dt2 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn2).count();
+    std::cout << "Phase = "<<dt2<<std::endl;
     freq_method_ = PH;
     CalcPhaseFreq();
     auto t3 = std::chrono::high_resolution_clock::now();
     auto dtn3 = t3.time_since_epoch() - t2.time_since_epoch();
     double dt3 = std::chrono::duration_cast<std::chrono::nanoseconds>(dtn3).count();
-    std::cout << "Time FFT = "<<dt1<<std::endl;
-    std::cout << "Phase = "<<dt2<<std::endl;
     std::cout << "Time Fit = "<<dt3<<std::endl;
   }else if (Option.compare("FFTOnly")==0){
     CallFFT();

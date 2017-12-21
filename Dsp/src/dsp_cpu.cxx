@@ -1,4 +1,4 @@
-#include "dsp.h"
+#include "dsp_cpu.h"
 #include "fftw3.h"
 #include "TF1.h"
 #include "TGraph.h"
@@ -122,7 +122,7 @@ std::vector<cdouble> Processor::rfft(const std::vector<double> &v,unsigned int N
   auto wfm_vec = v; // copy waveform since fftw destroys it
 
   for (unsigned int j=0;j<NBatch;j++){
-    fftw_complex *fft_ptr = reinterpret_cast<fftw_complex *>(&fft_vec[j*N]);
+    fftw_complex *fft_ptr = reinterpret_cast<fftw_complex *>(&fft_vec[j*n]);
 
     // Plan and execute the fft.
     auto plan = fftw_plan_dft_r2c_1d(N, &wfm_vec[j*N], fft_ptr, FFTW_ESTIMATE);
@@ -155,10 +155,10 @@ std::vector<double> Processor::irfft(const std::vector<cdouble>& fft, unsigned i
   std::vector<cdouble> fft_vec = fft;
 
   for (unsigned int j=0;j<NBatch;j++){
-    fftw_complex *fft_ptr = reinterpret_cast<fftw_complex *>(&fft_vec[j*NBatch]);
+    fftw_complex *fft_ptr = reinterpret_cast<fftw_complex *>(&fft_vec[j*n]);
 
     // Plan and execute the fft.
-    auto plan = fftw_plan_dft_c2r_1d(n, fft_ptr, &wfm_vec[j*NBatch], FFTW_ESTIMATE);
+    auto plan = fftw_plan_dft_c2r_1d(N, fft_ptr, &wfm_vec[j*N], FFTW_ESTIMATE);
     fftw_execute(plan);
     fftw_destroy_plan(plan);
   }
@@ -204,9 +204,9 @@ std::vector<cdouble> Processor::window_filter(const std::vector<cdouble>& spectr
   unsigned int i_start = std::floor((low - freq[0])/interval);
   unsigned int i_end = std::floor((high - freq[0])/interval);
   for (unsigned int j=0;j<NBatch;j++){
-    for (unsigned int i=j*N ; i<(j+1)*N ; i++){
+    for (unsigned int i=0 ; i<N ; i++){
       if (i<i_start || i>i_end){
-	output[i] = cdouble(0.0, 0.0);
+	output[j*N+i] = cdouble(0.0, 0.0);
       }
     }
   }
@@ -445,6 +445,9 @@ std::vector<double> convolve(const std::vector<double>& v, const std::vector<dou
 int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const std::vector<unsigned int> i_idx, const std::vector<unsigned int> f_idx , const size_t NPar,const unsigned int NBatch, const unsigned int Length,std::vector<std::vector<double>>& ParLists, std::vector<double>& Res)
 {
   Res.resize(x.size());
+  for (unsigned int i=0;i<NBatch;i++){
+    if (ParLists[i].size() != NPar) ParLists[i].resize(NPar);
+  }
   for (unsigned int j=0;j<NBatch;j++){
     TGraph gr_time_series_ = TGraph(f_idx[j] - i_idx[j], &x[j*Length+i_idx[j]], &y[j*Length+i_idx[j]]);
     // Now set up the polynomial phase fit
@@ -452,14 +455,20 @@ int linear_fit(const std::vector<double>& x, const std::vector<double>& y, const
     sprintf(fcn, "pol%d", static_cast<int>(NPar)-1);
     TF1 fit_ = TF1("f_fit", fcn,x[j*Length+i_idx[j]],x[j*Length+f_idx[j]]);
 
-    gr_time_series_.Fit(&fit_,"QREX0");
+    unsigned int Length = static_cast<unsigned int>(gr_time_series_.GetN());
+    if (Length<NPar){
+      for (unsigned int i=0;i<NPar;i++){
+	ParLists[j][i] = 0;
+      }
+    }else{
+      gr_time_series_.Fit(&fit_,"QREX0");
 
-    for (unsigned int i=0;i<NPar;i++){
-      ParLists[j][i] = fit_.GetParameter(i);
-    }
-
-    for (unsigned int i=0;i<Length;i++){
-      Res[j*Length+i] = y[j*Length+i] - fit_.Eval(x[j*Length+i]);
+      for (unsigned int i=0;i<NPar;i++){
+	ParLists[j][i] = fit_.GetParameter(i);
+      }
+      for (unsigned int i=0;i<Length;i++){
+	Res[j*Length+i] = y[j*Length+i] - fit_.Eval(x[j*Length+i]);
+      }
     }
   }
   return 0;
@@ -555,7 +564,7 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   auto wfm_vec = wf; // copy waveform since fftw destroys it
 
   for (unsigned int j=0;j<NBatch;j++){
-    fftw_complex *fft_ptr = reinterpret_cast<fftw_complex *>(&fid_fft[j*Length]);
+    fftw_complex *fft_ptr = reinterpret_cast<fftw_complex *>(&fid_fft[j*m]);
 
     // Plan and execute the fft.
     auto plan = fftw_plan_dft_r2c_1d(Length, &wfm_vec[j*Length], fft_ptr, FFTW_ESTIMATE);
@@ -572,9 +581,9 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   unsigned int i_start = std::floor((WindowFilterLow - freq[0])/interval);
   unsigned int i_end = std::floor((WindowFilterHigh - freq[0])/interval);
   for (unsigned int j=0;j<NBatch;j++){
-    for (unsigned int i=j*Length ; i<(j+1)*Length ; i++){
+    for (unsigned int i=0 ; i<m ; i++){
       if (i<i_start || i>i_end){
-	fid_fft_filtered[i] = cdouble(0.0, 0.0);
+	fid_fft_filtered[j*m+i] = cdouble(0.0, 0.0);
       }
     }
   }
@@ -583,11 +592,10 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   auto fft_vec1 = fid_fft_filtered;
 
   for (unsigned int j=0;j<NBatch;j++){
-    fftw_complex *fft_ptr = reinterpret_cast<fftw_complex *>(&fft_vec1[j*Length]);  
-    fftw_complex *wfm_ptr = reinterpret_cast<fftw_complex *>(&filtered_wf[j*Length]);  
+    fftw_complex *fft_ptr = reinterpret_cast<fftw_complex *>(&fft_vec1[j*m]);
 
-    // Plan and execute the inverse fft (+1 == exponent).
-    auto plan = fftw_plan_dft_1d(m, fft_ptr, wfm_ptr, +1, FFTW_ESTIMATE);  
+    // Plan and execute the fft.
+    auto plan = fftw_plan_dft_c2r_1d(Length, fft_ptr, &filtered_wf[j*Length], FFTW_ESTIMATE);
     fftw_execute(plan);
     fftw_destroy_plan(plan);
   }
@@ -605,11 +613,10 @@ int IntegratedProcessor::Process(const std::vector<double>& wf,const std::vector
   }
 
   for (unsigned int j=0;j<NBatch;j++){
-    fftw_complex *fft_ptr = reinterpret_cast<fftw_complex *>(&fft_vec2[j*Length]);  
-    fftw_complex *wfm_ptr = reinterpret_cast<fftw_complex *>(&wf_im[j*Length]);  
+    fftw_complex *fft_ptr = reinterpret_cast<fftw_complex *>(&fft_vec2[j*m]);
 
-    // Plan and execute the inverse fft (+1 == exponent).
-    auto plan = fftw_plan_dft_1d(m, fft_ptr, wfm_ptr, +1, FFTW_ESTIMATE);  
+    // Plan and execute the fft.
+    auto plan = fftw_plan_dft_c2r_1d(Length, fft_ptr, &wf_im[j*Length], FFTW_ESTIMATE);
     fftw_execute(plan);
     fftw_destroy_plan(plan);
   }
